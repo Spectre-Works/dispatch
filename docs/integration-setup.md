@@ -128,6 +128,31 @@ at QoS 0 with retain disabled. A later poll confirms the observed state.
 A broker connection, publish, or immediate reply is insufficient to confirm
 switching.
 
+## Connect a native SunSpec or Solarman meter
+
+Open **Energy → Connect or verify a whole-site meter**. Select **SunSpec
+Modbus TCP** or **Solarman V5** and enter the endpoint and meter settings.
+**Load meter profile** fills the form from a
+[DISPATCH SDK native profile](https://github.com/Spectre-Works/dispatch-sdk/blob/main/native-grid.md).
+Save once with direction unchecked. After comparing readings with known
+physical import and export, save with direction verified.
+
+- **SunSpec Modbus TCP** uses the Common model serial, configured unit,
+  zero-based SunSpec signature address, meter model, and meter position.
+  Models 201–204 return scaled integer watts. Models 211–214 return float
+  watts. For a SolarEdge inverter with an attached import/export meter,
+  use its local Modbus TCP port, inverter serial, and the attached grid
+  meter's model and position.
+- **Solarman V5** uses the logger serial and device unit. Enter the exact
+  inverter's zero-based signed 16-bit grid power register, read function
+  (03 or 04), and decimal scale exponent. Both clocks must be synchronized
+  for DISPATCH to accept the observation timestamp.
+
+Select the raw meter polarity so DISPATCH reports positive import and
+negative export. These drivers supply grid measurements through the Atom's
+LAN connection. Use the connection details of the actual grid meter or
+logger. Changes to native meter settings require verifying direction again.
+
 ## Verify grid flow and set an ESS target
 
 In **Energy → Connect or verify a whole-site meter**, enter the meter address

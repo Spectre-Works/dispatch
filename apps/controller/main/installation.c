@@ -96,6 +96,8 @@ typedef struct {
     uint64_t profile_revision, grid_profile_revision;
 } installation_store;
 
+_Static_assert(sizeof(grid_settings) == 136 && offsetof(grid_settings, direction_verified) == 135,
+               "Native grid settings reuse reserved bytes");
 // These offsets define the current installation record. Reserved bytes keep that
 // record stable when a stored option is retired.
 _Static_assert(offsetof(installation_store, first_run) == 1816, "Installation equipment layout");
@@ -1107,7 +1109,9 @@ esp_err_t installation_grid(const grid_settings *settings, bool keep_password)
 {
     lock();
     const bool same_meter = !strcmp(settings->target.ip, state.grid.target.ip) &&
-        !strcmp(settings->target.identity, state.grid.target.identity);
+        !strcmp(settings->target.identity, state.grid.target.identity) &&
+        (!native_grid_type(settings->target.identity) ||
+         (settings->reverse == state.grid.reverse && !memcmp(&settings->native, &state.grid.native, sizeof(settings->native))));
     if (ha_valid_entity(settings->target.identity, HA_SENSOR)) {
         for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
             if (!strcmp(state.home_meter[i].power, settings->target.identity)) {
@@ -2470,6 +2474,10 @@ void installation_read(installation_view *view)
         view->energy.solar_covered_watts = dispatch_solar_coverage(in.solar.production, in.solar.reserve, in.solar.running_watts);
     }
     view->energy.grid.reserve = state.grid.reserve;
+    if (native_grid_type(state.grid.target.identity)) {
+        view->energy.grid.native = state.grid.native;
+        view->energy.grid.reverse = state.grid.reverse;
+    }
     view->energy.grid.direction_verified = state.grid.direction_verified;
     strcpy(view->energy.grid.target.ip, state.grid.target.ip);
     strcpy(view->energy.grid.target.identity, state.grid.target.identity);
@@ -3182,6 +3190,9 @@ static void grid_tick(void)
         return;
     }
     shelly_target target = state.grid.target;
+    const native_grid_kind kind = native_grid_type(target.identity);
+    const native_grid_config native = state.grid.native;
+    const bool reverse = kind != NATIVE_GRID_NONE && state.grid.reverse;
     ha_endpoint ha = {0};
     const bool via_ha = ha_valid_entity(target.identity, HA_SENSOR);
     if (via_ha) ha = state.home.endpoint;
@@ -3204,6 +3215,8 @@ static void grid_tick(void)
             if (power_flow.grid_known) watts = power_flow.grid_watts;
             else result = SHELLY_PROTOCOL;
         }
+    } else if (kind != NATIVE_GRID_NONE) {
+        result = native_grid_power(target.ip, target.identity, &native, reverse, network_clock(), &watts);
     } else if (phases) {
         result = victron_grid_power(target.ip, phases, &watts);
     } else {

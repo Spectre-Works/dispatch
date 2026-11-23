@@ -893,21 +893,51 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
     <details id="grid-config">
       <summary id="grid-summary">Connect or verify a whole-site meter</summary>
       <form id="grid-form" autocomplete="off">
-        <p class="muted" id="grid-config-help">Connect a whole-site Shelly meter, Victron GX, Fronius Solar API, or a Home Assistant power sensor. Compare the reading with known import and export before enabling surplus control.</p>
+        <p class="muted" id="grid-config-help">Compare the reading with known import and export before enabling surplus control.</p>
         <div class="grid">
+          <label>Meter connection<select name="source">
+            <option value="legacy">Shelly, Victron, Fronius, or Home Assistant</option>
+            <option value="sunspec">SunSpec Modbus TCP</option>
+            <option value="solarman-v5">Solarman V5</option>
+          </select></label>
           <label>Grid meter IPv4 address<input name="ip" maxlength="15" placeholder="Optional"></label>
+        </div>
+        <fieldset id="grid-device" class="grid">
           <label>Meter ID or entity<input name="identity" maxlength="39" placeholder="shellypro3em-…, victron-1p, fronius-solar-api, sensor.grid_power"></label>
           <label>Authentication<select name="auth"><option value="keep">Keep saved password</option><option value="set">Set password</option><option value="none">No password</option></select></label>
           <label>Shelly credential<input name="password" type="password" maxlength="64"></label>
-        </div>
+        </fieldset>
+        <fieldset id="grid-native" hidden disabled>
+          <legend>Meter settings</legend>
+          <div class="grid">
+            <label><span id="grid-serial-label">Device serial</span><input name="serial" maxlength="32" spellcheck="false"></label>
+            <label>TCP port<input name="port" type="number" min="1" max="65535"></label>
+            <label>Modbus unit ID<input name="unit" type="number" min="1" max="247"></label>
+            <label><span id="grid-address-label">SunSpec base address</span><input name="address" type="number" min="0" max="65535"></label>
+            <label data-grid-protocol="sunspec">Meter model<select name="model">
+              <option value="201">201 · Single-phase integer</option><option value="202">202 · Split-phase integer</option>
+              <option value="203">203 · Three-phase wye integer</option><option value="204">204 · Three-phase delta integer</option>
+              <option value="211">211 · Single-phase float</option><option value="212">212 · Split-phase float</option>
+              <option value="213">213 · Three-phase wye float</option><option value="214">214 · Three-phase delta float</option>
+            </select></label>
+            <label data-grid-protocol="sunspec">Meter position<input name="meterIndex" type="number" min="1" max="16"></label>
+            <label data-grid-protocol="solarman-v5">Read function<select name="function">
+              <option value="3">03 · Holding register</option><option value="4">04 · Input register</option>
+            </select></label>
+            <label data-grid-protocol="solarman-v5">Power scale exponent<input name="exponent" type="number" min="-6" max="6"></label>
+            <label>Raw meter sign<select name="reverse"><option value="0">Positive for import</option><option value="1">Positive for export</option></select></label>
+          </div>
+        </fieldset>
         <label class="check-label"><input name="verified" type="checkbox">I verified that positive watts mean import and negative watts mean export.</label>
         <div class="grid">
           <label>Export to reserve (W)<input name="reserve" type="number" min="0" max="10000" required></label>
         </div>
         <div class="row">
           <button type="submit" class="primary">Save grid settings</button>
-          <button type="button" data-home-template="grid">Fill from SDK template</button>
+          <button type="button" data-home-template="grid">Fill from Home Assistant template</button>
+          <button type="button" id="choose-grid-profile">Load meter profile</button>
         </div>
+        <input id="grid-profile-file" type="file" accept=".json,.dispatch-profile,application/json" hidden>
         <p id="grid-message" role="status"></p>
       </form>
     </details>
@@ -1639,7 +1669,9 @@ async function requestPowerTest(start) {
 }
 
 const outletSource = d => ({1:'Shelly', 2:'Tasmota', 3:'Home Assistant', 4:'Tasmota via MQTT'}[d.outletKind] || 'Outlet');
-const meterSource = grid => grid.identity?.startsWith('victron-') ? 'Victron GX' :
+const meterSource = grid => grid.source === 'sunspec' ? 'SunSpec' :
+  grid.source === 'solarman-v5' ? 'Solarman V5' :
+  grid.identity?.startsWith('victron-') ? 'Victron GX' :
   grid.identity?.startsWith('sensor.') ? 'Home Assistant' :
   grid.identity?.startsWith('fronius-') ? 'Fronius' : 'Shelly meter';
 const integrationCommand = job => job.command === 4
@@ -2388,11 +2420,13 @@ function fillEnergyForms(saved) {
   const gf = el('grid-form').elements;
   if (saved === 'follow') return;
   gf.ip.value = grid.ip || '';
-  gf.identity.value = grid.identity || '';
-  gf.auth.value = grid.ip ? 'keep' : 'none';
+  gf.source.value = grid.source || 'legacy';
+  gf.identity.value = grid.source ? '' : grid.identity || '';
+  gf.auth.value = grid.ip && !grid.source ? 'keep' : 'none';
   gf.password.value = '';
   gf.verified.checked = !!grid.verified;
   gf.reserve.value = grid.reserve ?? 150;
+  setGridMeterFields(gf, grid);
 }
 
 function openStep(name) {
@@ -3950,6 +3984,79 @@ el('follow-form').onsubmit = async event => {
     el('follow-message').textContent = 'Saved. Review Outlet decisions in Preview.';
   }
 };
+function setGridMeterFields(fields, settings) {
+  const source = fields.source.value;
+  const native = source !== 'legacy', sun = source === 'sunspec';
+  el('grid-device').hidden = el('grid-device').disabled = native;
+  el('grid-native').hidden = el('grid-native').disabled = !native;
+  document.querySelector('[data-home-template="grid"]').hidden = native;
+  el('grid-serial-label').textContent = sun ? 'SunSpec device serial' : 'Logger serial';
+  el('grid-address-label').textContent = sun ? 'SunSpec base address' : 'Grid power register';
+  fields.address.max = sun ? 65468 : 65535;
+  for (const label of document.querySelectorAll('[data-grid-protocol]')) {
+    label.hidden = label.dataset.gridProtocol !== source;
+    label.querySelector('input, select').disabled = label.hidden;
+  }
+  for (const name of ['serial','port','unit','address','meterIndex','exponent'])
+    fields[name].required = native && !!fields.ip.value.trim();
+  if (settings) {
+    fields.serial.value = settings.serial ?? '';
+    fields.port.value = settings.port ?? (sun ? 502 : 8899);
+    fields.unit.value = settings.unit ?? 1;
+    fields.address.value = settings.address ?? (sun ? 40000 : '');
+    fields.model.value = settings.model || 203;
+    fields.meterIndex.value = settings.meterIndex || 1;
+    fields.function.value = settings.function || 3;
+    fields.exponent.value = settings.exponent ?? 0;
+    fields.reverse.value = settings.reverse ? '1' : '0';
+  }
+}
+
+el('grid-form').oninput = event => {
+  const fields = event.currentTarget.elements;
+  const name = event.target.name;
+  if (name === 'source') setGridMeterFields(fields, {});
+  else if (name === 'ip') setGridMeterFields(fields);
+  if (fields.source.value !== 'legacy' &&
+      ['source','ip','serial','port','unit','address','model','meterIndex','function','exponent','reverse'].includes(name))
+    fields.verified.checked = false;
+  if (name === 'source') fields.verified.checked = false;
+};
+
+el('choose-grid-profile').onclick = () => el('grid-profile-file').click();
+el('grid-profile-file').onchange = async event => {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  const status = el('grid-message');
+  try {
+    if (file.size > 2048) throw new Error('Choose a meter profile of at most 2 KB.');
+    const profile = JSON.parse(await file.text());
+    if (profile?.format !== 'dispatch-grid-meter' || profile.version !== 1 ||
+        !['sunspec','solarman-v5'].includes(profile.source)) throw new Error('Choose a compatible grid meter profile.');
+    const sun = profile.source === 'sunspec';
+    const integer = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
+    const valid = integer(profile.port, 1, 65535) && integer(profile.unit, 1, 247) &&
+      typeof profile.reverse === 'boolean' && (sun ?
+        integer(profile.address, 0, 65468) && [201,202,203,204,211,212,213,214].includes(profile.model) &&
+          integer(profile.meterIndex, 1, 16) :
+        (profile.address === null || integer(profile.address, 0, 65535)) &&
+          [3,4].includes(profile.function) && integer(profile.exponent, -6, 6));
+    if (!valid) throw new Error('The meter profile contains unsupported settings.');
+    const fields = el('grid-form').elements;
+    if (fields.source.value !== profile.source) {
+      fields.ip.value = '';
+      fields.serial.value = '';
+    }
+    fields.source.value = profile.source;
+    setGridMeterFields(fields, {...profile, serial:fields.serial.value});
+    fields.verified.checked = false;
+    status.textContent = 'Profile loaded. Review the device settings before saving.';
+  } catch (error) {
+    status.textContent = error.message;
+  }
+};
+
 el('grid-form').onsubmit = async event => {
   event.preventDefault();
   const f = event.target.elements, values = new FormData(event.target);
@@ -3957,7 +4064,8 @@ el('grid-form').onsubmit = async event => {
       !confirm('Save this surplus policy and return to Preview?')) return;
   values.set('mode', 'solar-meter');
   values.set('ip', f.ip.value.trim());
-  values.set('identity', f.identity.value.trim().toLowerCase());
+  if (f.source.value === 'legacy') values.set('identity', f.identity.value.trim().toLowerCase());
+  else values.set('serial', f.serial.value.trim());
   values.set('verified', f.verified.checked ? '1' : '0');
   if (await change('action', values, 'grid-message')) {
     fillEnergyForms('grid');
@@ -4419,6 +4527,10 @@ async function fillHomeTemplate(section) {
       if (section === 'grid' &&
           (fields.ip.value !== state.home.ip || fields.identity.value !== homeTemplate.grid)) {
         fields.verified.checked = false;
+      }
+      if (section === 'grid') {
+        fields.source.value = 'legacy';
+        setGridMeterFields(fields);
       }
       fields.ip.value = state.home.ip;
       fields.auth.value = 'none';
@@ -5087,6 +5199,9 @@ addFieldHelp('grid-form', {
   identity: 'Use a Shelly meter ID, victron-1p, victron-2p, victron-3p, fronius-solar-api, or the selected Home Assistant sensor ID.',
   auth: 'Keep stored credentials, replace them with the password below, or remove the stored password.',
   password: 'Enter the meter’s local password when you select Set password.',
+  address: 'Enter the zero-based SunSpec signature address or the documented Solarman inverter register address.',
+  meterIndex: 'Position among meters with the selected model, starting at 1.',
+  exponent: 'Enter 0 for watts or -1 for tenths of a watt.',
   verified: 'Compare a live reading with a known import or export before enabling surplus control.',
   reserve: 'Leave this many watts exporting after the estimated startup draw of a miner is subtracted.',
 });

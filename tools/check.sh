@@ -63,6 +63,8 @@ run_test notification -std=c11 -I"$test_dir" -Iapps/controller/main -Iintegratio
     tests/notification_test.c apps/controller/main/notifications.c
 run_test victron-gx -std=c11 -I"$test_dir" -Iintegrations -Iintegrations/energy -Iintegrations/switches \
     tests/victron_gx_test.c integrations/json_record.c integrations/integration_profile.c integrations/energy/modbus_tcp.c integrations/energy/victron_gx.c
+run_test native-grid -std=c11 -I"$test_dir" -Iintegrations -Iintegrations/energy -Iintegrations/switches \
+    tests/native_grid_test.c integrations/energy/native_grid.c integrations/energy/modbus_tcp.c -lm
 run_test shelly -std=gnu11 -I"$test_dir" -Iintegrations -Iintegrations/switches \
     tests/shelly_test.c integrations/integration_profile.c integrations/switches/shelly.c integrations/json_record.c -lm
 run_test fronius -std=c11 -Iintegrations -Iintegrations/energy -Iintegrations/switches \

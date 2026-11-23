@@ -6,7 +6,7 @@ idf_component_register(
          ../../../integrations/home_assistant.c ../../../integrations/switches/tasmota.c ../../../integrations/switches/outlet.c
          ../../../integrations/mqtt_wire.c ../../../integrations/switches/tasmota_mqtt.c
          ../../../integrations/energy/modbus_tcp.c ../../../integrations/energy/victron_gx.c
-         ../../../integrations/energy/fronius.c ../../../integrations/energy/ecu_r.c ../../../core/dispatch_daylight.c
+         ../../../integrations/energy/fronius.c ../../../integrations/energy/native_grid.c ../../../integrations/energy/ecu_r.c ../../../core/dispatch_daylight.c
     INCLUDE_DIRS ../../../integrations/mining-services ../../../integrations/energy ../../../core ../../../integrations ../../../integrations/switches ../../../integrations/miners
     EMBED_TXTFILES ../../web/index.html
     REQUIRES efuse esp_driver_gpio esp_driver_usb_serial_jtag esp_event esp_http_server esp_netif esp_partition esp_security esp_timer esp-tls esp_wifi http_parser lwip mbedtls nvs_flash

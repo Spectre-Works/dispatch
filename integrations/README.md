@@ -11,7 +11,7 @@
 | [cgminer](miners/README.md#initial-read-only-adapter) | Read-only miner reachability, recent hashrate, and accepted-share counter |
 | [Goldshell](miners/README.md#goldshell-blake2b-power-modes) | Model and firmware-specific factory presets, native Idle, and restart where supported |
 | [APsystems ECU-R](energy/README.md#apsystems-ecu-r) | Reported generation used to estimate headroom after a configured reserve |
-| [Whole-site grid sources](energy/README.md#whole-site-grid-flow) | Shelly, Victron GX, Fronius Solar API and Home Assistant signed grid readings |
+| [Whole-site grid sources](energy/README.md#whole-site-grid-flow) | Shelly, Victron GX, Fronius Solar API, SunSpec Modbus TCP, Solarman V5, and Home Assistant signed grid readings |
 | [Victron GX ESS](../docs/integration-setup.md#verify-grid-flow-and-set-an-ess-target) | Bounded volatile grid target with live preflight and readback |
 | [XBT and CONVOY DATUM](mining-services/README.md) | Optional read-only readiness, checkpoint, and mining path evidence |
 

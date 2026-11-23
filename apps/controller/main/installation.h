@@ -3,6 +3,7 @@
 #ifndef DISPATCH_INSTALLATION_H
 #define DISPATCH_INSTALLATION_H
 
+#include "native_grid.h"
 #include "cgminer.h"
 #include "dispatch_policy.h"
 #include "dispatch_daylight.h"
@@ -99,8 +100,8 @@ typedef struct {
 typedef struct {
     shelly_target target;
     uint16_t reserve;
-    uint8_t reserved[11];
-    bool direction_verified;
+    native_grid_config native;
+    bool reverse, direction_verified;
 } grid_settings;
 
 typedef struct {

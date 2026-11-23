@@ -7,6 +7,8 @@
 
 enum { MODBUS_TCP_WORDS = 8 };
 
+shelly_result modbus_read_connected(int fd, uint16_t transaction, uint8_t unit, uint16_t address,
+                                    uint16_t words[], unsigned count, int64_t deadline);
 shelly_result modbus_read(const char *ip, uint16_t port, uint8_t unit, uint16_t address,
                           uint16_t words[], unsigned count, int64_t deadline);
 shelly_result modbus_write(const char *ip, uint16_t port, uint8_t unit, uint16_t address,

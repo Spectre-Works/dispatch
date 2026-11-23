@@ -359,6 +359,14 @@ static void energy_status(httpd_req_t *request)
         "\"reserve\":%u,\"status\":%u,\"attempted\":%s,\"fresh\":%s",
         grid->target.ip, grid->target.identity, truth(grid->direction_verified), grid->reserve,
         (unsigned)energy->grid_result, truth(energy->grid_attempted), truth(energy->grid_fresh));
+    const native_grid_kind kind = native_grid_type(grid->target.identity);
+    if (kind) {
+        add(request, ",\"source\":\"%s\",\"serial\":\"%s\",\"port\":%u,\"unit\":%u,\"address\":%u,"
+            "\"model\":%u,\"meterIndex\":%u,\"function\":%u,\"exponent\":%d,\"reverse\":%s",
+            kind == NATIVE_GRID_SUNSPEC ? "sunspec" : "solarman-v5", grid->target.identity + 4,
+            grid->native.port, grid->native.unit, grid->native.address, grid->native.model,
+            grid->native.meter_index, grid->native.function, grid->native.exponent, truth(grid->reverse));
+    }
     nullable(request, "age", energy->grid_sampled, energy->grid_age);
     nullable(request, "watts", energy->grid_sampled, energy->grid_watts);
     add(request, ",\"gxCommand\":%u,\"gxResult\":%u,\"gxRequested\":%ld",
@@ -1112,33 +1120,66 @@ static esp_err_t save_follow(const char **error)
     return installation_follow(&settings);
 }
 
+static bool read_native_grid(grid_settings *settings, bool sunspec)
+{
+    char serial[33];
+    int port, unit, address, reverse;
+    if (!field("serial", serial, sizeof(serial)) || !integer("port", 1, 65535, &port) ||
+        !integer("unit", 1, 247, &unit) || !integer("address", 0, 65535, &address) ||
+        !integer("reverse", 0, 1, &reverse)) return false;
+    settings->native = (native_grid_config){.port = port, .unit = unit, .address = address};
+    settings->reverse = reverse;
+    if (sunspec) {
+        int model, index;
+        if (!integer("model", 201, 214, &model) || !integer("meterIndex", 1, 16, &index)) return false;
+        settings->native.model = model;
+        settings->native.meter_index = index;
+    } else {
+        int function, exponent;
+        if (!integer("function", 3, 4, &function) || !integer("exponent", -6, 6, &exponent)) return false;
+        settings->native.function = function;
+        settings->native.exponent = exponent;
+    }
+    snprintf(settings->target.identity, sizeof(settings->target.identity), "%s%s", sunspec ? "sun:" : "sv5:", serial);
+    return native_grid_valid(settings->target.identity, &settings->native);
+}
+
 static esp_err_t save_grid(const char **error)
 {
     grid_settings settings = {0};
     int verified, reserve;
-    char auth[5];
-    *error = "Enter the whole-site meter address and a supported meter ID. Surplus control requires verified meter direction.";
-    bool valid = field("ip", settings.target.ip, sizeof(settings.target.ip)) &&
-        field("identity", settings.target.identity, sizeof(settings.target.identity)) &&
-        integer("verified", 0, 1, &verified) && integer("reserve", 0, 10000, &reserve) &&
-        field("auth", auth, sizeof(auth)) &&
-        field("password", settings.target.password, sizeof(settings.target.password));
-    if (valid && settings.target.ip[0]) {
-        valid = endpoint(settings.target.ip) && installation_grid_identity(settings.target.identity);
-    }
-    if (valid && !settings.target.ip[0]) valid = !verified;
-    if (valid) {
-        valid = !strcmp(auth, "set")
-            ? grid_shelly_identity(settings.target.identity) && settings.target.password[0] &&
-                outlet_valid_password(&settings.target)
-            : (!strcmp(auth, "keep") || !strcmp(auth, "none")) && !settings.target.password[0];
+    char source[12] = "legacy";
+    const form_field supplied = read_field("source", source, sizeof(source));
+    const bool sunspec = !strcmp(source, "sunspec");
+    const bool native = sunspec || !strcmp(source, "solarman-v5");
+    *error = "Enter a valid whole-site meter address and setup. Surplus control requires verified meter direction.";
+    bool valid = supplied != FIELD_INVALID && (native || !strcmp(source, "legacy")) &&
+        field("ip", settings.target.ip, sizeof(settings.target.ip)) &&
+        integer("verified", 0, 1, &verified) && integer("reserve", 0, 10000, &reserve);
+    bool keep = false;
+    if (valid && !settings.target.ip[0]) {
+        valid = !verified;
+    } else if (valid && native) {
+        valid = endpoint(settings.target.ip) && read_native_grid(&settings, sunspec);
+    } else if (valid) {
+        char auth[5];
+        valid = endpoint(settings.target.ip) &&
+            field("identity", settings.target.identity, sizeof(settings.target.identity)) &&
+            installation_grid_identity(settings.target.identity) &&
+            field("auth", auth, sizeof(auth)) && field("password", settings.target.password, sizeof(settings.target.password));
+        if (valid) {
+            keep = !strcmp(auth, "keep");
+            valid = !strcmp(auth, "set") ?
+                grid_shelly_identity(settings.target.identity) && settings.target.password[0] &&
+                    outlet_valid_password(&settings.target) :
+                (keep || !strcmp(auth, "none")) && !settings.target.password[0];
+        }
     }
     esp_err_t result = ESP_ERR_INVALID_ARG;
     if (valid) {
         settings.direction_verified = verified;
         settings.reserve = reserve;
-        if (!settings.target.ip[0]) settings.target.identity[0] = 0;
-        result = installation_grid(&settings, !strcmp(auth, "keep"));
+        result = installation_grid(&settings, keep);
     }
     explicit_bzero(&settings, sizeof(settings));
     return result;

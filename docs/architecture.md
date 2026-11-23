@@ -61,6 +61,11 @@ compatible profiles. At boot the loader selects one mapping per family
 before starting the worker. The worker retains the native transport,
 identity checks, and command reconciliation.
 
+The native SunSpec and Solarman grid adapters run on the controller.
+SDK native grid presets populate the same authenticated meter form used
+for commissioning. The controller stores the selected endpoint and register
+settings and checks binding and direction before using power in the plan.
+
 A custom bridge runs on a separate host and uses the existing authenticated
 REST connection for selected entities and a versioned solar production route.
 The browser sends owner intent through the regular
