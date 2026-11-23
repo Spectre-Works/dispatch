@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
+
+# Local secrets and records; these exclusions are not a security boundary.
+.env
+.env.*
+!.env.example
+/.local/
+/secrets/
+/customer-data/
+/legal/executed/
+/legal/privileged/
+*.key
+*.p12
+*.pfx
+
+# Generated application/tool output.
+**/build/
+**/dist/
+**/node_modules/
+**/.pio/
+**/managed_components/
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+.coverage
+.pytest_cache/
+
+# Local editor/OS files.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local ESP-IDF configuration regenerated from the checked-in defaults.
+/apps/controller/sdkconfig
+/apps/controller/sdkconfig.old

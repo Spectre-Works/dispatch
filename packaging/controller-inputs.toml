@@ -1,0 +1,55 @@
+# SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
+# SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
+
+sdk_revision = "051e4c4eb20346e043cdd47bc388fde75ff8af63"
+sdk_version = "v6.1.1"
+gcc_version = "esp-15.2.0_20251204"
+
+# Archives that contribute allocated sections to the standard ESP32-S3
+# application or bootloader. Review any additions or removals with their source.
+linked_archives = [
+    "libapp_update.a", "libbootloader_support.a", "libc.a", "libcore.a",
+    "libcxx.a", "libefuse.a", "libesp-tls.a", "libesp_app_format.a",
+    "libesp_bootloader_format.a", "libesp_coex.a", "libesp_common.a",
+    "libesp_driver_dma.a", "libesp_driver_gpio.a", "libesp_driver_usb_serial_jtag.a",
+    "libesp_event.a", "libesp_hal_ana_conv.a", "libesp_hal_dma.a", "libesp_hal_gpio.a",
+    "libesp_hal_mspi.a", "libesp_hal_pmu.a", "libesp_hal_security.a",
+    "libesp_hal_systimer.a", "libesp_hal_uart.a", "libesp_http_server.a",
+    "libesp_hw_support.a", "libesp_libc.a", "libesp_mm.a", "libesp_netif.a",
+    "libesp_partition.a", "libesp_phy.a", "libesp_ringbuf.a", "libesp_rom.a",
+    "libesp_security.a", "libesp_stdio.a", "libesp_system.a", "libesp_timer.a",
+    "libesp_wifi.a", "libespnow.a", "libespressif__mdns.a", "libfreertos.a",
+    "libgcc.a", "libhal.a", "libheap.a", "libhttp_parser.a", "liblog.a", "liblwip.a",
+    "libmain.a", "libmbedtls.a", "libmbedx509.a", "libnet80211.a",
+    "libnvs_flash.a", "libnvs_sec_provider.a", "libphy.a", "libpp.a", "libpthread.a",
+    "libsoc.a", "libspi_flash.a", "libstdc++.a", "libtfpsacrypto.a", "libvfs.a",
+    "libwpa_supplicant.a", "libxtensa.a",
+]
+
+[sdk_notices]
+"esp-idf/LICENSE" = "LICENSE"
+"esp-idf/COPYRIGHT.rst" = "docs/en/COPYRIGHT.rst"
+"esp-idf/wifi-LICENSE" = "components/esp_wifi/lib/LICENSE"
+"esp-idf/phy-LICENSE" = "components/esp_phy/lib/LICENSE"
+"esp-idf/coex-LICENSE" = "components/esp_coex/lib/LICENSE"
+"freertos/LICENSE.md" = "components/freertos/FreeRTOS-Kernel/LICENSE.md"
+"http-parser/LICENSE.txt" = "components/http_parser/LICENSE.txt"
+"lwip/COPYING" = "components/lwip/lwip/COPYING"
+"wpa-supplicant/COPYING" = "components/wpa_supplicant/COPYING"
+"mbedtls/LICENSE" = "components/mbedtls/mbedtls/LICENSE"
+"tf-psa-crypto/LICENSE" = "components/mbedtls/mbedtls/tf-psa-crypto/LICENSE"
+
+[sdk_notice_prefixes]
+"xtensa/Cadence-MIT.txt" = ["components/xtensa/xtensa_context.S", "\n/*\n * XTENSA CONTEXT"]
+"ubsan/BSD-2-Clause.txt" = ["components/esp_system/ubsan.c", "\n#include"]
+"lwip/wlanif-attribution.txt" = ["components/esp_netif/lwip/netif/wlanif.c", "\n/**"]
+"lwip/sys-arch-attribution.txt" = ["components/lwip/port/freertos/sys_arch.c", "\n/* lwIP includes."]
+
+[toolchain_notices]
+"gcc/COPYING3" = "gcc/COPYING3"
+"gcc/COPYING.RUNTIME" = "gcc/COPYING.RUNTIME"
+"picolibc/COPYING.picolibc" = "picolibc/COPYING.picolibc"
+"picolibc/COPYING.NEWLIB" = "picolibc/COPYING.NEWLIB"
+
+[managed_notices]
+"mdns/LICENSE" = "espressif__mdns/LICENSE"

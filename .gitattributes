@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
+* text=auto
+*.md text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+*.toml text eol=lf
+# Preserve the exact supplied bytes of reference texts across checkouts.
+legal/reference/LICENSE.*.txt -text

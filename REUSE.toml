@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
+version = 1
+SPDX-PackageName = "SPECTRE WORKS DISPATCH"
+SPDX-PackageSupplier = "Organization: SPECTRE WORKS LLC"
+
+[[annotations]]
+path = [
+  "apps/controller/**",
+  "apps/web/**",
+  "core/**",
+  "integrations/**",
+  "hardware/**",
+  "packaging/**",
+  "tests/**",
+  "tools/**",
+  "docs/architecture.md",
+  "docs/development.md",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 SPECTRE WORKS LLC"
+SPDX-License-Identifier = "LicenseRef-Spectre-Dispatch-1.0"
+
+[[annotations]]
+path = [
+  "docs/operations.md",
+  "docs/integration-setup.md",
+  "docs/configuration-transfer.md",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 SPECTRE WORKS LLC"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+[[annotations]]
+path = ["apps/controller/main/timezone_data.inc"]
+precedence = "override"
+SPDX-FileCopyrightText = "IANA Time Zone Database contributors"
+SPDX-License-Identifier = "LicenseRef-IANA-TZDB-Public-Domain"
+
+# Unmapped materials retain their individual notices and applicable terms.

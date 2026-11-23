@@ -1,0 +1,20 @@
+{
+  "operative_application_identifier": "LicenseRef-Spectre-Dispatch-1.0",
+  "application_paths": [
+    "apps/controller/**",
+    "apps/web/**",
+    "core/**",
+    "integrations/**",
+    "hardware/**",
+    "packaging/**",
+    "tests/**",
+    "tools/**",
+    "docs/architecture.md",
+    "docs/development.md"
+  ],
+  "documentation_paths": [
+    "docs/operations.md",
+    "docs/integration-setup.md",
+    "docs/configuration-transfer.md"
+  ]
+}

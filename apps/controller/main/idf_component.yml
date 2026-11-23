@@ -1,0 +1,4 @@
+# SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
+# SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
+dependencies:
+  espressif/mdns: "1.9.0"

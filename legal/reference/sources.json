@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "license": "PolyForm-Shield-1.0.0",
+      "path": "legal/reference/LICENSE.PolyForm-Shield-1.0.0.txt",
+      "source_url": "https://polyformproject.org/licenses/shield/1.0.0.txt",
+      "source_consulted_date": "2026-11-20",
+      "assembly_method": "Transcribed from publisher plain-text source; whitespace normalized.",
+      "sha256": "67530f8e9adfcc5d2e9d72b804500cebb7472ff84c34a6729a80a2a9be901ee6",
+      "bytes": 5748,
+      "scope": "Reference copy for integrity checks against the operative license package.",
+      "digest_note": "Hash of this packaged copy, not asserted to be a publisher file hash."
+    },
+    {
+      "license": "CC-BY-4.0",
+      "path": "legal/reference/LICENSE.CC-BY-4.0.txt",
+      "source_url": "https://creativecommons.org/licenses/by/4.0/legalcode.txt",
+      "source_consulted_date": "2026-11-20",
+      "assembly_method": "Installed standard operative text with publisher explanatory preface/footer; official text consulted.",
+      "sha256": "7ecc439d4426060460269a994361cfb5337895a2cfc8cc7860f945e0be69a221",
+      "bytes": 18653,
+      "scope": "Reference copy for integrity checks against the operative license package.",
+      "digest_note": "Hash of this packaged copy, not asserted to be a publisher file hash."
+    }
+  ]
+}
