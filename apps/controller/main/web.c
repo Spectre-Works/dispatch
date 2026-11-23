@@ -1104,19 +1104,27 @@ static bool read_start_watts(uint16_t watts[DISPATCH_LIMIT])
     return true;
 }
 
-static esp_err_t save_follow(const char **error)
+static esp_err_t save_follow(const char **error, bool policy_only)
 {
     follow_settings settings = {0};
     int reserve, margin, restart, shed;
-    *error = "Check the solar reserve, shedding margin, timers, and startup wattage.";
+    *error = "Check the power reserves, preset margin, and timers.";
     if (!integer("reserve", 0, 50000, &reserve) || !integer("margin", 0, 10000, &margin) ||
         !integer("restartMinutes", 0, FOLLOW_TIMER_LIMIT_MINUTES, &restart) ||
-        !integer("shedMinutes", 0, FOLLOW_TIMER_LIMIT_MINUTES, &shed) ||
-        !read_start_watts(settings.start_watts)) return ESP_ERR_INVALID_ARG;
+        !integer("shedMinutes", 0, FOLLOW_TIMER_LIMIT_MINUTES, &shed)) return ESP_ERR_INVALID_ARG;
     settings.reserve = reserve;
     settings.shed_margin = margin;
     settings.restart_seconds = restart * 60;
     settings.shed_delay_seconds = shed * 60;
+    if (policy_only) {
+        int grid_reserve;
+        if (!integer("gridReserve", 0, 10000, &grid_reserve)) return ESP_ERR_INVALID_ARG;
+        return installation_power_policy(&settings, grid_reserve);
+    }
+    if (!read_start_watts(settings.start_watts)) {
+        *error = "Check the startup wattage.";
+        return ESP_ERR_INVALID_ARG;
+    }
     return installation_follow(&settings);
 }
 
@@ -1147,15 +1155,16 @@ static bool read_native_grid(grid_settings *settings, bool sunspec)
 static esp_err_t save_grid(const char **error)
 {
     grid_settings settings = {0};
-    int verified, reserve;
-    char source[12] = "legacy";
+    int verified, reserve = 0;
+    char reserve_field[12], source[12] = "legacy";
+    const bool keep_reserve = read_field("reserve", reserve_field, sizeof(reserve_field)) == FIELD_MISSING;
     const form_field supplied = read_field("source", source, sizeof(source));
     const bool sunspec = !strcmp(source, "sunspec");
     const bool native = sunspec || !strcmp(source, "solarman-v5");
     *error = "Enter a valid whole-site meter address and setup. Surplus control requires verified meter direction.";
     bool valid = supplied != FIELD_INVALID && (native || !strcmp(source, "legacy")) &&
         field("ip", settings.target.ip, sizeof(settings.target.ip)) &&
-        integer("verified", 0, 1, &verified) && integer("reserve", 0, 10000, &reserve);
+        integer("verified", 0, 1, &verified) && (keep_reserve || integer("reserve", 0, 10000, &reserve));
     bool keep = false;
     if (valid && !settings.target.ip[0]) {
         valid = !verified;
@@ -1179,7 +1188,7 @@ static esp_err_t save_grid(const char **error)
     if (valid) {
         settings.direction_verified = verified;
         settings.reserve = reserve;
-        result = installation_grid(&settings, keep);
+        result = installation_grid(&settings, keep, keep_reserve);
     }
     explicit_bzero(&settings, sizeof(settings));
     return result;
@@ -1336,7 +1345,17 @@ static esp_err_t apply_action(const char **conflict, const char **error)
     }
     if (!strcmp(mode, "solar-follow")) {
         *conflict = "Save a solar source first. Automatic solar presets require Efficiency mode and preset evaluation to be off.";
-        return save_follow(error);
+        return save_follow(error, false);
+    }
+    if (!strcmp(mode, "solar-policy")) return save_follow(error, true);
+    if (!strcmp(mode, "solar-start")) {
+        int slot, identity, watts;
+        *error = "Enter a startup draw from 0 to 10,000 watts.";
+        *conflict = "The selected pairing has changed. Reload it before saving startup draw.";
+        if (!integer("slot", 0, DISPATCH_LIMIT - 1, &slot) ||
+            !integer("identity", 1, UINT16_MAX, &identity) || !integer("watts", 0, 10000, &watts))
+            return ESP_ERR_INVALID_ARG;
+        return installation_startup_draw(slot, identity, watts);
     }
     if (!strcmp(mode, "solar-meter")) {
         *conflict = "Save the meter with surplus control off first and verify a fresh grid reading before enabling surplus control.";

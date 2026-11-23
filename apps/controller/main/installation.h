@@ -301,6 +301,8 @@ esp_err_t installation_preset_choice(unsigned slot, uint16_t identity, preset_st
 esp_err_t installation_preset_evaluate(unsigned slot, bool start);
 esp_err_t installation_solar(const solar_settings *settings);
 esp_err_t installation_follow(const follow_settings *settings);
+esp_err_t installation_power_policy(const follow_settings *settings, uint16_t grid_reserve);
+esp_err_t installation_startup_draw(unsigned slot, uint16_t identity, uint16_t watts);
 bool installation_grid_identity(const char *identity);
 esp_err_t installation_mqtt_probe(const char *identity);
 esp_err_t installation_mqtt(const mqtt_endpoint *endpoint, bool keep_credentials);
@@ -308,7 +310,7 @@ esp_err_t installation_ha(const home_settings *settings, bool keep_token);
 esp_err_t installation_ha_meter(unsigned slot, uint16_t identity, const home_meter_mapping *mapping);
 esp_err_t installation_ha_action(const char *entity, double value, const char *option);
 esp_err_t installation_gx_target(const char *ip, int32_t expected, int32_t watts);
-esp_err_t installation_grid(const grid_settings *settings, bool keep_password);
+esp_err_t installation_grid(const grid_settings *settings, bool keep_password, bool keep_reserve);
 esp_err_t installation_coordination(unsigned slot, unsigned priority, bool recovery);
 esp_err_t installation_rename(unsigned slot, const char *identity, const char *name);
 esp_err_t installation_override(unsigned slot, override_mode mode, unsigned seconds);

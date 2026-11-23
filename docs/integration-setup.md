@@ -23,38 +23,41 @@ API. Save the association, confirm its mapping, and review the operating plan.
 | Shelly original generation | Device IPv4 | Full lowercase local ID, such as `shellyswitch25-a1b2c3@1`. For devices whose `/shelly` page has `type` and `mac`, use the device family ID and lowercase MAC suffix. Use six digits in short-ID mode and twelve in long-ID mode. | `username:password` if Basic authentication is enabled. |
 | Shelly RPC | Device IPv4 | Full ID from `/shelly`. An omitted channel means 0. Use `@1` for the second relay or the documented add-on ID for a Pro 3EM output add-on. | Local device password if SHA-256 Digest is enabled. |
 | Tasmota HTTP | Device IPv4 | `tasmota-020809aabbcc@1` with the device's twelve lowercase MAC digits. Use the configured relay number 1–8. | Tasmota WebPassword if set. |
-| Tasmota MQTT | Broker IPv4 | `mqtt-020809aabbcc-MinerRack` with the device MAC and its case-sensitive MQTT Topic. This profile uses one relay. | Set in **Energy → MQTT broker connection**. |
-| Home Assistant | Home Assistant IPv4 | The exact `switch.miner` entity. | Set in **Energy → Home Assistant connection and entities**. |
+| Tasmota MQTT | Broker IPv4 | `mqtt-020809aabbcc-MinerRack` with the device MAC and its case-sensitive MQTT Topic. This profile uses one relay. | Set in **Settings → Connections → MQTT broker connection**. |
+| Home Assistant | Home Assistant IPv4 | The exact `switch.miner` entity. | Set in **Settings → Connections → Home Assistant connection and entities**. |
 
 Shelly and Tasmota provide meter values where the attached device and selected
 profile expose them. The timed first-run test needs a Shelly output with a
 working power and cumulative energy meter and a device-managed flip-back
-timer. For other outputs, enter a startup estimate under **Energy → Solar
-estimate and equipment power settings**. Spending limits need cumulative
+timer. For other outputs, select the paired miner under **Settings →
+Equipment & plan → Pair equipment** and enter its expected startup draw.
+Spending limits need cumulative
 outlet energy. Grid flow alone cannot supply the missing outlet counter.
 
 ## Set up Home Assistant
 
-Save the private LAN address, HTTP port, and a long-lived access token for
-an account that can read and operate the selected entities. Store the token
+Under **Settings → Connections**, save the private LAN address, HTTP port,
+and a long-lived access token for an account that can read and operate the selected entities. Store the token
 only in the controller setup and rotate it in Home Assistant if exposed.
 This connection uses HTTP on the trusted equipment LAN. The controller sends
 the token only to the saved address and port.
 
-- Pair `switch.*` entities as outlets. In **Meter sensors for a Home Assistant
-  outlet**, optionally select a per-outlet power sensor in W, kW, or mW and a
+- Pair `switch.*` entities as outlets. Select the saved pairing in
+  **Settings → Equipment & plan → Pair equipment**. In **Meter sensors for a
+  Home Assistant outlet**, optionally select a per-outlet power sensor in W, kW, or mW and a
   cumulative energy sensor in Wh, kWh, or MWh. Select a counter with
   `total` or `total_increasing` state class. Use sensors that measure that
   outlet alone.
-- In **Connect or verify a whole-site meter**, select a power sensor reporting
+- In **Settings → Energy sources → Connect or verify a whole-site meter**, select a power sensor reporting
   positive grid import and negative export. Entity availability and units
   must be valid before DISPATCH uses a reading. Configure an availability
   rule at the source if the integration retains a cached reading after loss
   of equipment contact.
-- The optional battery and temperature fields display charge percentage and
-  temperature. They do not act as grid power observations.
+- The optional battery and temperature fields show charge percentage and
+  temperature on **Energy**.
 - Select one `number.*`, `select.*`, or restart-class `button.*` control.
-  Apply a value offered by the entity's range, step, or option list. DISPATCH
+  Open **Equipment → Home Assistant control** to apply a value offered by
+  the entity's range, step, or option list. DISPATCH
   sends the domain's service call and checks the resulting entity state. For
   a button it checks for a changed press timestamp. Use controls for routine
   equipment operation and keep installer, protection and calibration entities
@@ -93,7 +96,7 @@ grid power, battery and temperature sensors, and the configured number,
 select, or restart action.
 
 A bridge that provides production readings can also be selected under
-**Energy → Connect a solar production source**. Choose **DISPATCH SDK
+**Settings → Energy sources → Connect a solar production source**. Choose **DISPATCH SDK
 bridge**, use the saved REST address, and enter the 12-digit gateway ID
 reported by the bridge. DISPATCH waits for matching, fresh production and
 the same evidence of sustained output used for a native ECU-R. A production
@@ -120,7 +123,8 @@ validity period. Check the controller clock and the broker's certificate chain
 if the connection fails. Plain MQTT over TCP is available for a trusted
 isolated LAN with a blank TLS name and certificate.
 
-Use **Check device status** with the MQTT device ID to verify the broker
+In **Settings → Connections → MQTT broker connection**, use **Check device
+status** with the MQTT device ID to verify the broker
 connection, MAC and relay reading before pairing. The controller opens a
 short clean session and requests fresh Tasmota status
 to identify the device and observe the relay. It sends explicit ON or OFF
@@ -130,12 +134,12 @@ switching.
 
 ## Connect a native SunSpec or Solarman meter
 
-Open **Energy → Connect or verify a whole-site meter**. Select **SunSpec
+Open **Settings → Energy sources → Connect or verify a whole-site meter**. Select **SunSpec
 Modbus TCP** or **Solarman V5** and enter the endpoint and meter settings.
 **Load meter profile** fills the form from a
 [DISPATCH SDK native profile](https://github.com/Spectre-Works/dispatch-sdk/blob/main/native-grid.md).
-Save once with direction unchecked. After comparing readings with known
-physical import and export, save with direction verified.
+Save once with direction unchecked. Compare the signed reading shown in the
+form with known physical import and export, then save with direction verified.
 
 - **SunSpec Modbus TCP** uses the Common model serial, configured unit,
   zero-based SunSpec signature address, meter model, and meter position.
@@ -155,7 +159,7 @@ logger. Changes to native meter settings require verifying direction again.
 
 ## Verify grid flow and set an ESS target
 
-In **Energy → Connect or verify a whole-site meter**, enter the meter address
+In **Settings → Energy sources → Connect or verify a whole-site meter**, enter the meter address
 and the corresponding ID. Save it with verification cleared, then compare
 with an independent import and export measurement. Positive watts must mean
 import and negative watts must mean export. Verify direction only after those

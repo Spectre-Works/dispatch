@@ -813,6 +813,16 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
       <div id="equipment-picker" role="group" aria-label="Select equipment"></div>
       <div id="devices"></div>
     </div>
+    <section id="home-control" hidden>
+      <h3>Home Assistant control</h3>
+      <form id="home-action-form" hidden>
+        <p id="home-current" class="muted"></p>
+        <label id="home-number-field">Requested value<input name="number" type="number"></label>
+        <label id="home-option-field">Requested option<select name="option"></select></label>
+        <button type="submit" class="primary">Apply Home Assistant action</button>
+        <p id="home-action-message" role="status"></p>
+      </form>
+    </section>
   </div>
   <div id="view-energy" hidden>
     <div class="section-head page-head"><div><h2 tabindex="-1">Energy</h2>
@@ -850,97 +860,6 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
       <div id="energy-decisions"></div>
     </section>
     </div>
-    <details id="solar-config">
-      <summary>Connect a solar production source</summary>
-      <form id="solar-form">
-        <div class="grid">
-          <label>Source<select name="source"><option value="ecu">APsystems ECU-R</option><option value="bridge">DISPATCH SDK bridge</option></select></label>
-          <label>Source IPv4 address<input name="ip" maxlength="15" placeholder="Optional"></label>
-          <label>TCP port<input name="port" type="number" min="1" max="65535" required></label>
-          <label>Expected gateway ID<input name="id" pattern="[0-9]{12}" inputmode="numeric" maxlength="12"></label>
-          <label>Overnight polling starts<input name="nightStart" type="time" required></label>
-          <label>Overnight polling ends<input name="nightEnd" type="time" required></label>
-        </div>
-        <p class="muted">Polls every 5 minutes by day and every 20 minutes overnight. Equal times use 5-minute polling all day.</p>
-        <button type="submit" class="primary">Save solar connection</button>
-        <p id="solar-message" role="status"></p>
-      </form>
-    </details>
-    <details id="follow-config">
-      <summary id="follow-summary">Solar estimate and equipment power settings</summary>
-      <form id="follow-form">
-        <div class="grid">
-          <label>Power to leave for other loads (W)<input name="reserve" type="number" min="0" max="50000" required></label>
-          <label>Preset restore margin (W)<input name="margin" type="number" min="0" max="10000" required></label>
-          <label>Restart lockout (minutes)<input name="restartMinutes" type="number" min="0" max="120" required></label>
-          <label>Low-production shedding delay (minutes)<input name="shedMinutes" type="number" min="0" max="120" required></label>
-        </div>
-        <fieldset>
-          <legend>Expected startup draw in watts</legend>
-          <p class="muted">Enter 0 to use the learned estimate. Use the first-run power test in Equipment to measure a new miner, or enter a known startup draw here.</p>
-          <div class="grid">
-            <div class="startup-draw"><label><span>Miner 1</span><input name="watts0" type="number" min="0" max="10000" aria-describedby="follow-form-learned-watts0" required></label><small class="muted" id="follow-form-learned-watts0"></small></div>
-            <div class="startup-draw"><label><span>Miner 2</span><input name="watts1" type="number" min="0" max="10000" aria-describedby="follow-form-learned-watts1" required></label><small class="muted" id="follow-form-learned-watts1"></small></div>
-            <div class="startup-draw"><label><span>Miner 3</span><input name="watts2" type="number" min="0" max="10000" aria-describedby="follow-form-learned-watts2" required></label><small class="muted" id="follow-form-learned-watts2"></small></div>
-            <div class="startup-draw"><label><span>Miner 4</span><input name="watts3" type="number" min="0" max="10000" aria-describedby="follow-form-learned-watts3" required></label><small class="muted" id="follow-form-learned-watts3"></small></div>
-          </div>
-        </fieldset>
-        <p id="follow-save-help" class="muted">Saving opens Preview. Set paid permissions and mining hours in the operating plan.</p>
-        <button type="submit" class="primary" id="follow-save-button">Save power settings</button>
-        <p id="follow-message" role="status"></p>
-      </form>
-    </details>
-    <details id="grid-config">
-      <summary id="grid-summary">Connect or verify a whole-site meter</summary>
-      <form id="grid-form" autocomplete="off">
-        <p class="muted" id="grid-config-help">Compare the reading with known import and export before enabling surplus control.</p>
-        <div class="grid">
-          <label>Meter connection<select name="source">
-            <option value="legacy">Shelly, Victron, Fronius, or Home Assistant</option>
-            <option value="sunspec">SunSpec Modbus TCP</option>
-            <option value="solarman-v5">Solarman V5</option>
-          </select></label>
-          <label>Grid meter IPv4 address<input name="ip" maxlength="15" placeholder="Optional"></label>
-        </div>
-        <fieldset id="grid-device" class="grid">
-          <label>Meter ID or entity<input name="identity" maxlength="39" placeholder="shellypro3em-…, victron-1p, fronius-solar-api, sensor.grid_power"></label>
-          <label>Authentication<select name="auth"><option value="keep">Keep saved password</option><option value="set">Set password</option><option value="none">No password</option></select></label>
-          <label>Shelly credential<input name="password" type="password" maxlength="64"></label>
-        </fieldset>
-        <fieldset id="grid-native" hidden disabled>
-          <legend>Meter settings</legend>
-          <div class="grid">
-            <label><span id="grid-serial-label">Device serial</span><input name="serial" maxlength="32" spellcheck="false"></label>
-            <label>TCP port<input name="port" type="number" min="1" max="65535"></label>
-            <label>Modbus unit ID<input name="unit" type="number" min="1" max="247"></label>
-            <label><span id="grid-address-label">SunSpec base address</span><input name="address" type="number" min="0" max="65535"></label>
-            <label data-grid-protocol="sunspec">Meter model<select name="model">
-              <option value="201">201 · Single-phase integer</option><option value="202">202 · Split-phase integer</option>
-              <option value="203">203 · Three-phase wye integer</option><option value="204">204 · Three-phase delta integer</option>
-              <option value="211">211 · Single-phase float</option><option value="212">212 · Split-phase float</option>
-              <option value="213">213 · Three-phase wye float</option><option value="214">214 · Three-phase delta float</option>
-            </select></label>
-            <label data-grid-protocol="sunspec">Meter position<input name="meterIndex" type="number" min="1" max="16"></label>
-            <label data-grid-protocol="solarman-v5">Read function<select name="function">
-              <option value="3">03 · Holding register</option><option value="4">04 · Input register</option>
-            </select></label>
-            <label data-grid-protocol="solarman-v5">Power scale exponent<input name="exponent" type="number" min="-6" max="6"></label>
-            <label>Raw meter sign<select name="reverse"><option value="0">Positive for import</option><option value="1">Positive for export</option></select></label>
-          </div>
-        </fieldset>
-        <label class="check-label"><input name="verified" type="checkbox">I verified that positive watts mean import and negative watts mean export.</label>
-        <div class="grid">
-          <label>Export to reserve (W)<input name="reserve" type="number" min="0" max="10000" required></label>
-        </div>
-        <div class="row">
-          <button type="submit" class="primary">Save grid settings</button>
-          <button type="button" data-home-template="grid">Fill from Home Assistant template</button>
-          <button type="button" id="choose-grid-profile">Load meter profile</button>
-        </div>
-        <input id="grid-profile-file" type="file" accept=".json,.dispatch-profile,application/json" hidden>
-        <p id="grid-message" role="status"></p>
-      </form>
-    </details>
     <details id="gx-config" hidden>
       <summary>Victron ESS grid target</summary>
       <form id="gx-form">
@@ -950,70 +869,10 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
         <p id="gx-message" role="status"></p>
       </form>
     </details>
-    <details id="home-config">
-      <summary>Home Assistant connection and entities</summary>
-      <form id="home-form" autocomplete="off">
-        <div class="grid">
-          <label>Home Assistant IPv4 address<input name="ip" maxlength="15"></label>
-          <label>HTTP port<input name="port" type="number" min="1" max="65535" required></label>
-          <label>Token<select name="auth"><option value="keep">Keep saved token</option><option value="set">Set token</option></select></label>
-          <label>Long-lived access token<input name="token" type="password" maxlength="255"></label>
-          <label>Battery charge entity<input name="battery" maxlength="80" placeholder="sensor.battery"></label>
-          <label>Temperature entity<input name="temperature" maxlength="80" placeholder="sensor.temperature"></label>
-          <label>Equipment control entity<input name="actuator" maxlength="80" placeholder="number.…, select.…, or restart button.…"></label>
-        </div>
-        <div class="row">
-          <button type="submit" class="primary">Save Home Assistant connection</button>
-          <button type="button" data-home-template="home">Fill from SDK template</button>
-        </div>
-        <p id="home-message" role="status"></p>
-      </form>
-      <form id="home-meter-form" hidden>
-        <fieldset>
-          <legend>Meter sensors for a Home Assistant outlet</legend>
-          <div class="grid">
-            <label>Outlet<select name="slot"></select></label>
-            <label>Power entity<input name="power" maxlength="80" placeholder="sensor.miner_power"></label>
-            <label>Cumulative energy entity<input name="energy" maxlength="80" placeholder="sensor.miner_energy"></label>
-          </div>
-          <div class="row">
-            <button type="submit">Save outlet meter mapping</button>
-            <button type="button" data-home-template="meter">Fill from SDK template</button>
-          </div>
-          <p id="home-meter-message" role="status"></p>
-        </fieldset>
-      </form>
+    <section id="home-sensors" hidden>
+      <h3>Home Assistant readings</h3>
       <dl id="home-readings"></dl>
-      <form id="home-action-form" hidden>
-        <p id="home-current" class="muted"></p>
-        <label id="home-number-field">Requested value<input name="number" type="number"></label>
-        <label id="home-option-field">Requested option<select name="option"></select></label>
-        <button type="submit" class="primary">Apply Home Assistant action</button>
-        <p id="home-action-message" role="status"></p>
-      </form>
-    </details>
-    <details id="mqtt-config">
-      <summary>MQTT broker connection</summary>
-      <form id="mqtt-form" autocomplete="off">
-        <div class="grid">
-          <label>Broker IPv4 address<input name="ip" maxlength="15"></label>
-          <label>Broker port<input name="port" type="number" min="1" max="65535" required></label>
-          <label>TLS certificate name<input name="name" maxlength="95" placeholder="DNS name, blank for LAN TCP"></label>
-          <label>Credentials<select name="auth"><option value="keep">Keep saved credentials</option><option value="set">Set credentials and CA</option></select></label>
-          <label>Broker username<input name="user" maxlength="48"></label>
-          <label>Broker password<input name="password" type="password" maxlength="64"></label>
-        </div>
-        <label>Broker CA certificate<textarea name="certificate" rows="5" maxlength="1850" spellcheck="false" placeholder="Paste the CA certificate in PEM format for TLS"></textarea></label>
-        <button type="submit" class="primary">Save MQTT broker</button>
-        <p id="mqtt-message" role="status"></p>
-      </form>
-      <form id="mqtt-probe-form" hidden>
-        <label>MQTT device ID<input name="identity" maxlength="39" required placeholder="mqtt-020809aabbcc-MinerRack"></label>
-        <button type="submit">Check device status</button>
-        <p id="mqtt-probe-result" class="muted" role="status"></p>
-        <p id="mqtt-probe-message" role="status"></p>
-      </form>
-    </details>
+    </section>
   </div>
   <div id="view-mining" hidden>
     <div class="section-head page-head"><div><h2 tabindex="-1">Mining path</h2><p class="muted">Follow a miner’s reported destination through the gateway and check the node’s readiness.</p></div><button type="button" class="subtle" data-reveal="mining-config">Connection settings</button></div>
@@ -1124,6 +983,8 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
     <div class="section-head page-head"><div><h2 tabindex="-1">Installation settings</h2><p class="muted">Pair equipment, choose a schedule, then review the changes in Preview.</p></div></div>
     <nav class="settings-nav" aria-label="Installation settings">
       <button type="button" data-settings="configure" aria-current="page">Equipment &amp; plan</button>
+      <button type="button" data-settings="energy-sources-settings">Energy sources</button>
+      <button type="button" data-settings="connection-settings">Connections</button>
       <button type="button" data-settings="clock-settings">Clock</button>
       <button type="button" data-settings="notification-settings">Notifications</button>
       <button type="button" data-settings="profile-settings">Integration profiles</button>
@@ -1303,6 +1164,160 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
       </div>
       <div id="config-message" class="warn" role="status"></div>
     </form>
+      <section id="pair-power-settings" data-setup-page="pair">
+        <form id="startup-form" hidden>
+          <fieldset>
+            <legend>Expected startup draw</legend>
+            <div class="grid">
+              <label>Startup draw (W)<input name="watts" type="number" min="0" max="10000" required aria-describedby="startup-learned"></label>
+            </div>
+            <p id="startup-learned" class="muted"></p>
+            <button type="submit">Save startup draw</button>
+            <p id="startup-message" role="status"></p>
+          </fieldset>
+        </form>
+        <form id="home-meter-form" hidden>
+          <fieldset>
+            <legend>Meter sensors for a Home Assistant outlet</legend>
+            <div class="grid">
+              <label>Power entity<input name="power" maxlength="80" placeholder="sensor.miner_power"></label>
+              <label>Cumulative energy entity<input name="energy" maxlength="80" placeholder="sensor.miner_energy"></label>
+            </div>
+            <div class="row">
+              <button type="submit">Save outlet meter mapping</button>
+              <button type="button" data-home-template="meter">Fill from SDK template</button>
+            </div>
+            <p id="home-meter-message" role="status"></p>
+          </fieldset>
+        </form>
+      </section>
+      <details id="follow-config" data-setup-page="plan" hidden>
+        <summary id="follow-summary">Power settings</summary>
+        <form id="follow-form">
+          <div class="grid">
+            <label>Grid export reserve (W)<input name="gridReserve" type="number" min="0" max="10000" required></label>
+            <label>Solar power reserved for other loads (W)<input name="reserve" type="number" min="0" max="50000" required></label>
+            <label>Preset restore margin (W)<input name="margin" type="number" min="0" max="10000" required></label>
+            <label>Restart lockout (minutes)<input name="restartMinutes" type="number" min="0" max="120" required></label>
+            <label>Low-production shedding delay (minutes)<input name="shedMinutes" type="number" min="0" max="120" required></label>
+          </div>
+          <p id="follow-save-help" class="muted">Saving power settings opens Preview.</p>
+          <button type="submit" class="primary" id="follow-save-button">Save power settings</button>
+          <p id="follow-message" role="status"></p>
+        </form>
+      </details>
+    </section>
+    <section id="energy-sources-settings" hidden>
+      <h3>Energy sources</h3>
+      <details id="grid-config">
+        <summary id="grid-summary">Connect or verify a whole-site meter</summary>
+        <form id="grid-form" autocomplete="off">
+          <p class="muted" id="grid-config-help">Compare the reading with known import and export before enabling surplus control.</p>
+          <div class="grid">
+            <label>Meter connection<select name="source">
+              <option value="legacy">Shelly, Victron, Fronius, or Home Assistant</option>
+              <option value="sunspec">SunSpec Modbus TCP</option>
+              <option value="solarman-v5">Solarman V5</option>
+            </select></label>
+            <label>Grid meter IPv4 address<input name="ip" maxlength="15" placeholder="Optional"></label>
+          </div>
+          <fieldset id="grid-device" class="grid">
+            <label>Meter ID or entity<input name="identity" maxlength="39" placeholder="shellypro3em-…, victron-1p, fronius-solar-api, sensor.grid_power"></label>
+            <label>Authentication<select name="auth"><option value="keep">Keep saved password</option><option value="set">Set password</option><option value="none">No password</option></select></label>
+            <label>Shelly credential<input name="password" type="password" maxlength="64"></label>
+          </fieldset>
+          <fieldset id="grid-native" hidden disabled>
+            <legend>Meter settings</legend>
+            <div class="grid">
+              <label><span id="grid-serial-label">Device serial</span><input name="serial" maxlength="32" spellcheck="false"></label>
+              <label>TCP port<input name="port" type="number" min="1" max="65535"></label>
+              <label>Modbus unit ID<input name="unit" type="number" min="1" max="247"></label>
+              <label><span id="grid-address-label">SunSpec base address</span><input name="address" type="number" min="0" max="65535"></label>
+              <label data-grid-protocol="sunspec">Meter model<select name="model">
+                <option value="201">201 · Single-phase integer</option><option value="202">202 · Split-phase integer</option>
+                <option value="203">203 · Three-phase wye integer</option><option value="204">204 · Three-phase delta integer</option>
+                <option value="211">211 · Single-phase float</option><option value="212">212 · Split-phase float</option>
+                <option value="213">213 · Three-phase wye float</option><option value="214">214 · Three-phase delta float</option>
+              </select></label>
+              <label data-grid-protocol="sunspec">Meter position<input name="meterIndex" type="number" min="1" max="16"></label>
+              <label data-grid-protocol="solarman-v5">Read function<select name="function">
+                <option value="3">03 · Holding register</option><option value="4">04 · Input register</option>
+              </select></label>
+              <label data-grid-protocol="solarman-v5">Power scale exponent<input name="exponent" type="number" min="-6" max="6"></label>
+              <label>Raw meter sign<select name="reverse"><option value="0">Positive for import</option><option value="1">Positive for export</option></select></label>
+            </div>
+          </fieldset>
+          <p id="grid-commissioning" class="muted"></p>
+          <label class="check-label"><input name="verified" type="checkbox">I verified that positive watts mean import and negative watts mean export.</label>
+          <div class="row">
+            <button type="submit" class="primary">Save grid settings</button>
+            <button type="button" data-home-template="grid">Fill from Home Assistant template</button>
+            <button type="button" id="choose-grid-profile">Load meter profile</button>
+          </div>
+          <input id="grid-profile-file" type="file" accept=".json,.dispatch-profile,application/json" hidden>
+          <p id="grid-message" role="status"></p>
+        </form>
+      </details>
+      <details id="solar-config">
+        <summary>Connect a solar production source</summary>
+        <form id="solar-form">
+          <div class="grid">
+            <label>Source<select name="source"><option value="ecu">APsystems ECU-R</option><option value="bridge">DISPATCH SDK bridge</option></select></label>
+            <label>Source IPv4 address<input name="ip" maxlength="15" placeholder="Optional"></label>
+            <label>TCP port<input name="port" type="number" min="1" max="65535" required></label>
+            <label>Expected gateway ID<input name="id" pattern="[0-9]{12}" inputmode="numeric" maxlength="12"></label>
+            <label>Overnight polling starts<input name="nightStart" type="time" required></label>
+            <label>Overnight polling ends<input name="nightEnd" type="time" required></label>
+          </div>
+          <p class="muted">Polls every 5 minutes by day and every 20 minutes overnight. Equal times use 5-minute polling all day.</p>
+          <button type="submit" class="primary">Save solar connection</button>
+          <p id="solar-message" role="status"></p>
+        </form>
+      </details>
+    </section>
+    <section id="connection-settings" hidden>
+      <h3>Connections</h3>
+      <details id="home-config">
+        <summary>Home Assistant connection and entities</summary>
+        <form id="home-form" autocomplete="off">
+          <div class="grid">
+            <label>Home Assistant IPv4 address<input name="ip" maxlength="15"></label>
+            <label>HTTP port<input name="port" type="number" min="1" max="65535" required></label>
+            <label>Token<select name="auth"><option value="keep">Keep saved token</option><option value="set">Set token</option></select></label>
+            <label>Long-lived access token<input name="token" type="password" maxlength="255"></label>
+            <label>Battery charge entity<input name="battery" maxlength="80" placeholder="sensor.battery"></label>
+            <label>Temperature entity<input name="temperature" maxlength="80" placeholder="sensor.temperature"></label>
+            <label>Equipment control entity<input name="actuator" maxlength="80" placeholder="number.…, select.…, or restart button.…"></label>
+          </div>
+          <div class="row">
+            <button type="submit" class="primary">Save Home Assistant connection</button>
+            <button type="button" data-home-template="home">Fill from SDK template</button>
+          </div>
+          <p id="home-message" role="status"></p>
+        </form>
+      </details>
+      <details id="mqtt-config">
+        <summary>MQTT broker connection</summary>
+        <form id="mqtt-form" autocomplete="off">
+          <div class="grid">
+            <label>Broker IPv4 address<input name="ip" maxlength="15"></label>
+            <label>Broker port<input name="port" type="number" min="1" max="65535" required></label>
+            <label>TLS certificate name<input name="name" maxlength="95" placeholder="DNS name, blank for LAN TCP"></label>
+            <label>Credentials<select name="auth"><option value="keep">Keep saved credentials</option><option value="set">Set credentials and CA</option></select></label>
+            <label>Broker username<input name="user" maxlength="48"></label>
+            <label>Broker password<input name="password" type="password" maxlength="64"></label>
+          </div>
+          <label>Broker CA certificate<textarea name="certificate" rows="5" maxlength="1850" spellcheck="false" placeholder="Paste the CA certificate in PEM format for TLS"></textarea></label>
+          <button type="submit" class="primary">Save MQTT broker</button>
+          <p id="mqtt-message" role="status"></p>
+        </form>
+        <form id="mqtt-probe-form" hidden>
+          <label>MQTT device ID<input name="identity" maxlength="39" required placeholder="mqtt-020809aabbcc-MinerRack"></label>
+          <button type="submit">Check device status</button>
+          <p id="mqtt-probe-result" class="muted" role="status"></p>
+          <p id="mqtt-probe-message" role="status"></p>
+        </form>
+      </details>
     </section>
     <section id="clock-settings" hidden>
       <div class="section-head"><h3>Controller clock</h3><button type="button" id="time-retry">Retry synchronization</button></div>
@@ -1708,15 +1723,22 @@ for (const button of document.querySelectorAll('[data-settings]')) {
 for (const button of document.querySelectorAll('[data-reveal]')) {
   button.onclick = () => {
     const panel = el(button.dataset.reveal);
-    panel.open = true;
-    focusDestination(panel.querySelector('summary'));
+    if (panel.closest('#view-settings')) jumpTo('settings', panel.id);
+    else {
+      panel.open = true;
+      focusDestination(panel.querySelector('summary'));
+    }
   };
 }
 
 function jumpTo(workspace, target) {
-  if (workspace === 'settings' && target) selectSettings(target);
-  openView(workspace);
   const destination = target ? el(target) : el('view-' + workspace).querySelector('h2');
+  if (workspace === 'settings' && target) {
+    const tab = [...document.querySelectorAll('[data-settings]')].find(button =>
+      el(button.dataset.settings).contains(destination));
+    if (tab) selectSettings(tab.dataset.settings);
+  }
+  openView(workspace);
   if (destination.matches('details')) destination.open = true;
   focusDestination(destination, !target);
 }
@@ -1878,10 +1900,10 @@ function renderAttention() {
     'Open accounting', 'activity', 'accounting-settings');
   const grid = state.energy?.grid, solar = state.energy?.solar;
   if (grid?.ip && grid.attempted && !grid.fresh) {
-    add('Grid meter reading unavailable', 'Check the meter connection, credentials, and identity.', 'Open Energy', 'energy', 'grid-config');
+    add('Grid meter reading unavailable', 'Check the meter connection, credentials, and identity.', 'Meter settings', 'settings', 'grid-config');
   }
   if (solar?.ip && solar.status >= 2) {
-    add('Solar source reading failed', 'Check the source connection and expected gateway ID.', 'Open Energy', 'energy', 'solar-config');
+    add('Solar source reading failed', 'Check the source connection and expected gateway ID.', 'Solar connection', 'settings', 'solar-config');
   } else if (solar?.ip && solar.age != null && !solar.fresh && !solar.night) {
     add('Solar reading overdue', 'DISPATCH is waiting for a recent production reading.',
       'Open Energy', 'energy', 'solar-plan');
@@ -2089,6 +2111,7 @@ function renderEquipment() {
       efficiencyValue(candidate.d.efficiency) + ').'
     : '';
   if (view === 'equipment') {
+    renderHomeAction();
     const picker = el('equipment-picker');
     picker.hidden = !installed.length;
     if (!installed.some(({i}) => i === inspectedSlot)) inspectedSlot = installed[0]?.i ?? 0;
@@ -2160,7 +2183,10 @@ function openView(name) {
     if (button.dataset.view === name) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   }
-  if (name === 'settings' && !el('configure').hidden) requestSetupData();
+  if (name === 'settings') {
+    if (!el('configure').hidden) requestSetupData();
+    if (state && !state.setup) renderSettingsStatus();
+  }
   if (name === 'activity') {
     renderActivity();
     refreshActivity();
@@ -2233,22 +2259,6 @@ function renderPlanEnergy(follow, grid) {
     'Outlet measurements count toward paid energy at the configured rates.';
 }
 
-function renderStartupDrawFields() {
-  for (const formId of ['follow-form']) {
-    const fields = el(formId).elements;
-    for (const [i, device] of state.devices.entries()) {
-      const field = 'watts' + i;
-      const label = fields[field].labels[0].querySelector('span');
-      const name = deviceLabel(i);
-      if (label.textContent !== name) label.textContent = name;
-      const learned = el(formId + '-learned-' + field);
-      const detail = device.learnedStartupWatts > 0 ? 'Learned estimate · ' + reading(device.learnedStartupWatts, 'W', 0) :
-        device.ip ? 'Awaiting learned draw' : 'No outlet paired';
-      if (learned.textContent !== detail) learned.textContent = detail;
-    }
-  }
-}
-
 function renderEnergy() {
   const {grid = {}, solar = {}, follow = {}} = state.energy || {};
   const connected = !!(grid.ip || solar.ip);
@@ -2270,8 +2280,8 @@ function renderEnergy() {
     mode,
   ].filter(Boolean).join(' · ');
   if (view !== 'energy') return;
-  renderStartupDrawFields();
-  renderIntegrationControls(grid);
+  renderVictronTarget(grid);
+  renderHomeReadings();
 
   el('grid-flow').textContent = gridFlow;
   el('grid-age').textContent = grid.age == null ? (grid.ip ? meterSource(grid) : '') : meterSource(grid) + ' · ' +
@@ -2313,19 +2323,46 @@ function renderEnergy() {
   el('energy-decisions').replaceChildren(...(rows.length ? rows : [entry('p', 'Pair miner outlets to see decisions.', 'muted')]));
 }
 
-function fillHomeMeter() {
-  const form = el('home-meter-form'), fields = form.elements;
-  const outlets = state.devices.flatMap((d, slot) => d.outletKind === 3 ? [[d, slot]] : []);
-  const saved = fields.slot.value;
-  form.hidden = !outlets.length;
-  fields.slot.replaceChildren(...outlets.map(([d, slot]) => new Option(deviceLabel(slot) + ' · ' + d.identity, slot)));
-  if (outlets.some(([, slot]) => String(slot) === saved)) fields.slot.value = saved;
-  const mapping = state.devices[fields.slot.value]?.homeMeter;
-  fields.power.value = mapping?.power || '';
-  fields.energy.value = mapping?.energy || '';
+function pairedSettings() {
+  const slot = Number(el('config').elements.index.value);
+  const device = state.devices[slot];
+  return {slot, device, binding: slot + ':' + device.timelineId};
 }
 
-function renderIntegrationControls(grid) {
+function renderPairedSettings() {
+  const {slot, device, binding} = pairedSettings();
+  const startup = el('startup-form');
+  const meter = el('home-meter-form');
+  startup.hidden = !device.ip;
+  meter.hidden = device.outletKind !== 3;
+  if (startup.dataset.binding !== binding) {
+    startup.dataset.binding = binding;
+    startup.elements.watts.value = state.energy?.follow?.start?.[slot] ?? 0;
+    el('startup-message').textContent = '';
+  }
+  if (meter.dataset.binding !== binding) {
+    meter.dataset.binding = binding;
+    meter.elements.power.value = device.homeMeter?.power || '';
+    meter.elements.energy.value = device.homeMeter?.energy || '';
+    el('home-meter-message').textContent = '';
+  }
+  el('startup-learned').textContent = device.learnedStartupWatts > 0 ?
+    'Learned estimate ' + reading(device.learnedStartupWatts, 'W', 0) + '. Enter 0 to use it.' :
+    'Enter 0 to use the learned estimate when available. Measure a new miner with the first-run test in Equipment.';
+}
+
+function renderGridCommissioning() {
+  const grid = state.energy?.grid || {};
+  el('grid-commissioning').textContent = !grid.ip ? 'Save the meter connection to see a reading here.' :
+    !grid.fresh || grid.watts == null || statusIsStale() ? 'Waiting for a fresh reading from the saved meter.' :
+    'Saved meter · ' + (grid.watts > 0 ? '+' : '') + grid.watts + ' W' +
+      (grid.watts > 0 ? ' import' : grid.watts < 0 ? ' export' : '') +
+      ' · Read ' + duration(grid.age) + ' ago';
+}
+
+function renderSettingsStatus() {
+  renderPairedSettings();
+  renderGridCommissioning();
   const mqtt = state.mqtt || {}, probe = el('mqtt-probe-form');
   probe.hidden = !mqtt.ip;
   probe.querySelector('button').disabled = !!mqtt.probePending;
@@ -2334,6 +2371,9 @@ function renderIntegrationControls(grid) {
     ({1:'No usable broker or device reply.', 2:'Broker rejected authentication or access.',
       3:'Unsupported broker or device reply.', 4:'Device MAC did not match.'}[mqtt.probeResult] || 'Status unavailable.');
 
+}
+
+function renderVictronTarget(grid) {
   const gx = el('gx-form'), target = grid.gxTarget;
   el('gx-config').hidden = !grid.identity?.startsWith('victron-');
   gx.querySelector('button').disabled = target == null || !grid.verified || !grid.fresh || state.paused ||
@@ -2343,15 +2383,20 @@ function renderIntegrationControls(grid) {
   el('gx-current').textContent = (target == null ? 'Waiting for the ESS setpoint.' : target === 0 ? 'Target readback is zero or unset.' : 'Observed target ' + reading(target, 'W', 0) + '.') +
     (gxStatus ? ' · ' + gxStatus : '');
 
+}
+
+function renderHomeReadings() {
   const home = state.home || {};
-  const homeMeter = el('home-meter-form');
-  const slots = state.devices.flatMap((d, slot) => d.outletKind === 3 ? [slot] : []);
-  if ([...homeMeter.elements.slot.options].map(o => Number(o.value)).join(',') !== slots.join(','))
-    fillHomeMeter();
+  el('home-sensors').hidden = !home.battery && !home.temperature;
   renderEvidence(el('home-readings'), [
     ...(home.battery ? [['Battery charge', reading(home.batteryPercent, '%')]] : []),
     ...(home.temperature ? [['Temperature', reading(home.temperatureC, '°C')]] : []),
   ]);
+}
+
+function renderHomeAction() {
+  const home = state.home || {};
+  el('home-control').hidden = !home.actuator;
   const action = el('home-action-form'), number = action.elements.number, option = action.elements.option;
   action.hidden = !home.actuator;
   const domain = home.actuator?.split('.')[0];
@@ -2411,11 +2456,11 @@ function fillEnergyForms(saved) {
   if (saved === 'solar') return;
   const ff = el('follow-form').elements;
   if (!saved || saved === 'follow') {
+    ff.gridReserve.value = grid.reserve ?? 150;
     ff.reserve.value = follow.reserve ?? 600;
     ff.margin.value = follow.margin ?? 100;
     ff.restartMinutes.value = follow.restartMinutes ?? 10;
     ff.shedMinutes.value = follow.shedMinutes ?? 5;
-    for (let i = 0; i < state.devices.length; i++) ff['watts' + i].value = follow.start?.[i] ?? 0;
   }
   const gf = el('grid-form').elements;
   if (saved === 'follow') return;
@@ -2425,7 +2470,6 @@ function fillEnergyForms(saved) {
   gf.auth.value = grid.ip && !grid.source ? 'keep' : 'none';
   gf.password.value = '';
   gf.verified.checked = !!grid.verified;
-  gf.reserve.value = grid.reserve ?? 150;
   setGridMeterFields(gf, grid);
 }
 
@@ -3340,6 +3384,7 @@ function fillAssociation() {
   f.miner.value = d.minerIp;
   f.password.value = '';
   f.auth.value = 'keep';
+  renderPairedSettings();
 }
 function savedDayPlan() {
   return {start:state.start, end:state.end,
@@ -3795,6 +3840,7 @@ function paint(next) {
   renderConnection();
   renderNotifications();
   renderEnergy();
+  if (view === 'settings') renderSettingsStatus();
   if (view === 'mining') renderMining();
   if (el('miner-control').open) showCurrentOverride();
   if (el('power-mode').open) renderPowerMode();
@@ -3845,6 +3891,7 @@ async function refreshStatus() {
   } catch {
     statusReadFailed = true;
     renderConnection();
+    if (view === 'settings' && state && !state.setup) renderGridCommissioning();
   }
 }
 async function refresh() {
@@ -3978,7 +4025,7 @@ el('follow-form').onsubmit = async event => {
   event.preventDefault();
   if (state.enabled && !confirm('Save power settings and return to Preview?')) return;
   const values = new FormData(event.target);
-  values.set('mode', 'solar-follow');
+  values.set('mode', 'solar-policy');
   if (await change('action', values, 'follow-message')) {
     fillEnergyForms('follow');
     el('follow-message').textContent = 'Saved. Review Outlet decisions in Preview.';
@@ -4103,15 +4150,22 @@ el('home-form').onsubmit = async event => {
   for (const field of ['ip', 'battery', 'temperature', 'actuator']) values.set(field, values.get(field).trim());
   if (await change('action', values, 'home-message')) fillEnergyForms('home');
 };
-el('home-meter-form').elements.slot.onchange = fillHomeMeter;
+el('startup-form').onsubmit = async event => {
+  event.preventDefault();
+  const form = event.target, {slot, device, binding} = pairedSettings();
+  if (!device.ip || form.dataset.binding !== binding) return;
+  if (state.enabled && !confirm('Save startup draw and return to Preview?')) return;
+  await change('action', new URLSearchParams({mode:'solar-start', slot, identity:device.timelineId,
+    watts:form.elements.watts.value}), 'startup-message');
+};
 el('home-meter-form').onsubmit = async event => {
   event.preventDefault();
-  const f = event.target.elements, d = state.devices[f.slot.value];
-  if (!d || d.outletKind !== 3) return;
+  const form = event.target, {slot, device, binding} = pairedSettings();
+  if (device.outletKind !== 3 || form.dataset.binding !== binding) return;
   if (state.enabled && !confirm('Save this meter mapping and return to Preview?')) return;
-  const values = new URLSearchParams({mode:'home-meter', slot:f.slot.value, identity:d.timelineId,
-    power:f.power.value.trim(), energy:f.energy.value.trim()});
-  if (await change('action', values, 'home-meter-message')) fillHomeMeter();
+  const values = new URLSearchParams({mode:'home-meter', slot, identity:device.timelineId,
+    power:form.elements.power.value.trim(), energy:form.elements.energy.value.trim()});
+  await change('action', values, 'home-meter-message');
 };
 el('home-action-form').onsubmit = async event => {
   event.preventDefault();
@@ -5192,8 +5246,9 @@ addFieldHelp('follow-form', {
   margin: 'Leave at least these extra watts available before an adaptive miner restores its higher preset.',
   restartMinutes: 'Wait this long after DISPATCH sees an outlet change from on to off before an automatic restart while following solar. Zero uses the built-in one-minute minimum off time.',
   shedMinutes: 'Wait this long below the shedding threshold when solar is required. Recovery or authorized paid coverage clears the timer. A later usable production reading must confirm the drop. Zero leaves only the normal minimum run time. Manual pause can request shutoff immediately.',
-  watts0: startupHelp, watts1: startupHelp, watts2: startupHelp, watts3: startupHelp,
+  gridReserve: 'Leave this many watts exporting after the estimated startup draw of a miner is subtracted.',
 });
+addFieldHelp('startup-form', {watts:startupHelp});
 addFieldHelp('grid-form', {
   ip: 'Use the private IPv4 address of the meter or its configured bridge.',
   identity: 'Use a Shelly meter ID, victron-1p, victron-2p, victron-3p, fronius-solar-api, or the selected Home Assistant sensor ID.',
@@ -5203,7 +5258,6 @@ addFieldHelp('grid-form', {
   meterIndex: 'Position among meters with the selected model, starting at 1.',
   exponent: 'Enter 0 for watts or -1 for tenths of a watt.',
   verified: 'Compare a live reading with a known import or export before enabling surplus control.',
-  reserve: 'Leave this many watts exporting after the estimated startup draw of a miner is subtracted.',
 });
 addFieldHelp('config', {
   index: 'Choose which miner slot to edit. The association pairs one miner with the outlet that powers it.',

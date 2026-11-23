@@ -845,11 +845,8 @@ esp_err_t installation_solar(const solar_settings *settings)
     return result;
 }
 
-esp_err_t installation_follow(const follow_settings *settings)
+static esp_err_t save_power_settings(void)
 {
-    lock();
-    rollback = state;
-    state.follow = *settings;
     energy_preview();
     const esp_err_t result = save();
     if (result == ESP_OK) {
@@ -864,6 +861,44 @@ esp_err_t installation_follow(const follow_settings *settings)
         dirty = true;
     }
     explicit_bzero(&rollback, sizeof(rollback));
+    return result;
+}
+
+esp_err_t installation_follow(const follow_settings *settings)
+{
+    lock();
+    rollback = state;
+    state.follow = *settings;
+    const esp_err_t result = save_power_settings();
+    unlock();
+    return result;
+}
+
+esp_err_t installation_power_policy(const follow_settings *settings, uint16_t grid_reserve)
+{
+    lock();
+    rollback = state;
+    state.follow.reserve = settings->reserve;
+    state.follow.shed_margin = settings->shed_margin;
+    state.follow.restart_seconds = settings->restart_seconds;
+    state.follow.shed_delay_seconds = settings->shed_delay_seconds;
+    state.grid.reserve = grid_reserve;
+    const esp_err_t result = save_power_settings();
+    unlock();
+    return result;
+}
+
+esp_err_t installation_startup_draw(unsigned slot, uint16_t identity, uint16_t watts)
+{
+    if (slot >= DISPATCH_LIMIT || watts > 10000) return ESP_ERR_INVALID_ARG;
+    lock();
+    if (!identity || identity != installation_equipment_identity(&state.settings.device[slot])) {
+        unlock();
+        return ESP_ERR_INVALID_STATE;
+    }
+    rollback = state;
+    state.follow.start_watts[slot] = watts;
+    const esp_err_t result = save_power_settings();
     unlock();
     return result;
 }
@@ -1105,7 +1140,7 @@ esp_err_t installation_gx_target(const char *ip, int32_t expected, int32_t watts
     return ESP_OK;
 }
 
-esp_err_t installation_grid(const grid_settings *settings, bool keep_password)
+esp_err_t installation_grid(const grid_settings *settings, bool keep_password, bool keep_reserve)
 {
     lock();
     const bool same_meter = !strcmp(settings->target.ip, state.grid.target.ip) &&
@@ -1129,6 +1164,7 @@ esp_err_t installation_grid(const grid_settings *settings, bool keep_password)
     rollback = state;
     const bool rearm = operating_grid() || settings->direction_verified;
     state.grid = *settings;
+    if (keep_reserve) state.grid.reserve = rollback.grid.reserve;
     state.grid_profile_revision = grid_profile_revision(settings->target.identity);
     if (keep_password && same_meter) {
         strcpy(state.grid.target.password, rollback.grid.target.password);

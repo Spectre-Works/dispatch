@@ -29,8 +29,9 @@ In **Settings → Configuration transfer**, choose **Export configuration**
 to save a file or **Choose file to import** to review one. **Apply in
 Preview** replaces all four slots and the plan together. A
 matching outlet ID and address in the same slot can retain its locally stored
-password. Home Assistant and MQTT endpoints, secrets, and separate sensor
-mappings are configured locally in Energy. Save custom integration profile
+password. Configure Home Assistant and MQTT endpoints and credentials under
+**Settings → Connections**. Reapply per-outlet meter mappings under
+**Settings → Equipment & plan → Pair equipment**. Save custom integration profile
 files separately and upload them in **Settings → Integration profiles**.
 Re-enter any credentials required on a different controller. Wi-Fi
 credentials, the owner key, outlet passwords, learned profiles, meter

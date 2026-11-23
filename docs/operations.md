@@ -28,7 +28,7 @@ Use **Lock browser** on a shared device to clear its saved sign-in.
    power test** on a mapped, powered-off outlet that supports the timed test. The test can use part of
    your allowance. It runs the outlet for up to four minutes, confirms it is
    off, and records the peak and steady draw. You can instead enter a known
-   startup estimate under **Energy → Solar estimate and equipment power settings**.
+   startup estimate for the selected miner under **Settings → Equipment & plan → Pair equipment**.
 
 **Return to Preview** below **Outlet decisions** suspends new automation
 requests and leaves outlets at their observed states. With outlet control
@@ -62,13 +62,14 @@ time zone for schedules, rates, and daily budget resets.
 
 ### Connect an energy source
 
-- For production estimates, use **Energy → Connect an APsystems ECU-R**.
-  Set the load reserve under **Solar estimate and equipment power settings**.
-  Startup draw, restart lockout, and preset restore margin are also here.
-- For measured grid flow, use **Energy → Connect or verify a whole-site meter**.
-  Save a supported Shelly, Victron, Fronius, or Home Assistant source.
-  Compare its signed reading with known import and export, then verify its
-  direction. [Energy setup and controls](integration-setup.md#verify-grid-flow-and-set-an-ess-target)
+Open **Settings → Energy sources** to connect a solar production source or a
+whole-site grid meter. For a grid meter, compare the signed reading in the
+setup form with known import and export before verifying direction.
+[Energy setup and controls](integration-setup.md#verify-grid-flow-and-set-an-ess-target)
+
+Open **Settings → Equipment & plan → Operating plan → Power settings** to set
+the grid export reserve, the solar reserve for other loads, and the restart,
+shedding, and preset restore settings.
 
 **Energy → Power for mining** shows the source, miner draw, available power
 for starts, and estimated paid draw. Production estimates reserve power for
@@ -101,7 +102,7 @@ readings, and current operating state. [Miner capability details](../integration
 | A miner is waiting to start | Read the outlet’s proposed action or policy decision on Overview. If draw is unknown, use the supervised test or enter a startup value. If Preview is active, review the proposed action before enabling control. |
 | An unexpected stop or cost increase | In **Activity → Power & decisions**, pick a miner and interval. Compare paid energy and cost with the relay, preset, daylight gap, and source readings. **Daily budget** shows spending relative to the allowance. |
 | An electricity meter gap | Open **Activity → Electricity accounting**. Resuming from fresh readings keeps recorded spending and marks the gap. Clearing accounting resets the balance and saved daily reports. |
-| An unavailable or stale reading | Use **Needs attention** and **What happens next** on Overview. Check the selected source in **Energy** and the meter or miner in **Equipment**. Check **Settings → Clock** if local time is unavailable. |
+| An unavailable or stale reading | Use **Needs attention** and **What happens next** on Overview. Check live readings in **Energy**, source configuration in **Settings → Energy sources**, and the miner in **Equipment**. Check **Settings → Clock** if local time is unavailable. |
 | A miner powered on without observed work | Check the miner API and **Mining path**. Optional XBT node and DATUM observations provide upstream evidence. Set priorities, temporary holds, and optional recovery in **Equipment → Coordination**. |
 
 Activity keeps up to 48 hours of five-minute records and up to seven days of

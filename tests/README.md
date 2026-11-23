@@ -26,7 +26,7 @@ python3 tests/equipment_simulator.py SIMULATOR_IP --control-file /tmp/dispatch-f
    Digest and the same IP for cgminer. Confirm the synthetic association in
    Preview.
 2. For a scheduled-start test, enter an expected startup draw for the fixture
-   under **Energy → Solar estimate and equipment power settings**. The
+   under **Settings → Equipment & plan → Pair equipment**. The
    first fixture reports 500 W when on. Allow paid starts during the current
    mining hours and select **No daily limit** for this synthetic run. Save
    and confirm which outlet Preview proposes to switch on.
@@ -72,8 +72,8 @@ confirm its outcome from a later observation.
 For MQTT TLS, create a short-lived synthetic CA and a server certificate
 with the fixture DNS name as a subject alternative name. Start the
 simulator with `--mqtt-port 8883 --mqtt-cert SERVER_PEM --mqtt-key SERVER_KEY`.
-Configure the matching name and CA under **Energy → MQTT broker
-connection**. Use **Check device status** to validate the broker and
+Configure the matching name and CA under **Settings → Connections →
+MQTT broker connection**. Use **Check device status** to validate the broker and
 fresh relay state before pairing. A different certificate name or MAC
 must fail. Switch exercise through the operating plan needs a separate
 development installation with synthetic outlets.
