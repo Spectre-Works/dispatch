@@ -44,9 +44,11 @@ pass. Record actual adoption rather than inventing approvals.
 
 ## Working conventions
 
+Work directly on `main` unless the maintainer explicitly asks for a branch.
+
 When a task or a coherent bundle of work is complete, run the relevant
-checks, commit the changes that belong to the task, and push the branch to
-its configured remote. Verify the remote branch points to the new commit.
+checks, commit the changes that belong to the task, and push to the
+configured remote. Verify the remote branch points to the new commit.
 Keep unrelated work, secrets, and generated local artifacts out of the commit.
 
 Do not commit secrets, signing keys, real customer records, executed deals,
