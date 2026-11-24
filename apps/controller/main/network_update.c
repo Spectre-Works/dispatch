@@ -58,7 +58,8 @@ enum {
     OTA_MANIFEST_MAX = 320, OTA_REDIRECT_MAX = 2048, OTA_REDIRECTS = 3,
     OTA_HEADER_MAX = 8192,
     CHECK_INTERVAL = 86400, RETRY_INTERVAL = 3600, BUTTON_INTERVAL = 15,
-    SOCKET_TIMEOUT_MS = 2500, CHECK_TIMEOUT = 15, INSTALL_TIMEOUT = 120,
+    SOCKET_TIMEOUT_MS = 2500, TLS_CONNECT_TIMEOUT_MS = 8000,
+    CHECK_TIMEOUT = 35, INSTALL_TIMEOUT = 120,
 };
 static const char release_base[] = DISPATCH_OTA_RELEASE_BASE;
 static const char manifest_prefix[] = "DISPATCH/01 OTA v1\n";
@@ -372,13 +373,18 @@ static unsigned request_asset(transfer *io, const char *url, asset_response *res
         path, (int)(path - host), host);
     if (bytes <= 0 || bytes >= sizeof(io->buffer)) return 0;
 
+    const int64_t now = esp_timer_get_time();
+    const int64_t remaining_ms = (io->deadline - now) / 1000;
+    if (remaining_ms <= 0) return 0;
+    const int connect_timeout = remaining_ms < TLS_CONNECT_TIMEOUT_MS ? remaining_ms : TLS_CONNECT_TIMEOUT_MS;
+    const int64_t connect_by = now + connect_timeout * INT64_C(1000);
     esp_tls_t *tls = esp_tls_init();
     if (!tls) return 0;
+    // ESP-TLS uses this timeout for its initial TCP select before the TLS handshake.
     const esp_tls_cfg_t config = {
         .cacert_buf = ota_ca, .cacert_bytes = ota_ca_end - ota_ca,
-        .non_block = true, .timeout_ms = 100,
+        .non_block = true, .timeout_ms = connect_timeout,
     };
-    const int64_t connect_by = esp_timer_get_time() + SOCKET_TIMEOUT_MS * INT64_C(1000);
     int connected = 0, fd = -1;
     while (transfer_ready(io) && esp_timer_get_time() < connect_by) {
         connected = esp_tls_conn_new_async(host, parts.field_data[UF_HOST].len,
