@@ -518,8 +518,9 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
 .dial-scale span:nth-child(2){right:0;top:50%;transform:translateY(-50%)}
 .dial-scale span:nth-child(3){bottom:0;left:50%;transform:translateX(-50%)}
 .dial-scale span:nth-child(4){left:0;top:50%;transform:translateY(-50%)}
-.operating{--arc:#e6ecf2}.paid{--arc:#91baff}.quiet{--arc:#aaa9c4}.price{--arc:#dbbe99}
-.dial-ring{inset:calc(12% + var(--index) * 4.7%);background:conic-gradient(from var(--start),var(--arc) 0 var(--sweep),#35404b var(--sweep) 1turn);mask:radial-gradient(farthest-side,transparent calc(100% - 5px),black calc(100% - 4px))}
+.operating{--arc:#e6ecf2}.paid{--arc:#91baff}.daylight{--arc:#ffc35d}.daylight-dark{--arc:#35404b}.quiet{--arc:#aaa9c4}.price{--arc:#dbbe99}
+.schedule-dial:has(.dial-ring:nth-child(6)){--ring-step:3.5%;--ring-width:3px}
+.dial-ring{inset:calc(12% + var(--index) * var(--ring-step,4.7%));background:conic-gradient(from var(--start),var(--arc) 0 var(--sweep),#35404b var(--sweep) 1turn);mask:radial-gradient(farthest-side,transparent calc(100% - var(--ring-width,4px) - 1px),black calc(100% - var(--ring-width,4px)))}
 .dial-hand{inset:9%;transform:rotate(var(--hand));display:none}
 [data-clock]:not([data-stale="true"])>.dial-hand{display:block}
 .dial-hand::before{content:"";position:absolute;left:calc(50% - 1px);top:0;height:26%;width:2px;background:white;box-shadow:0 0 0 1px #10151b}
@@ -529,6 +530,8 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
 #schedule-context small{display:block;width:max-content;position:relative;left:50%;transform:translateX(-50%);font-size:.69rem;letter-spacing:.03em;white-space:nowrap}
 #saved-schedule>summary{padding:.5rem 0;min-height:40px}
 #schedule-summary{display:block;margin:.18rem 0 0 1rem;color:var(--muted);font:.78rem/1.4 var(--mono)}
+#schedule-summary span{display:block;margin-top:.2rem}
+#schedule-summary .daylight{color:var(--arc)}
 #saved-schedule[open] #schedule-summary{display:none}
 #schedule-tracks{margin:0}
 #schedule-tracks>div{position:relative;display:block;border-top:1px solid var(--line);padding:.42rem 0 .42rem .9rem}
@@ -592,7 +595,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
   .schedule-instrument{grid-template-columns:minmax(7rem,.85fr) minmax(0,1.15fr)}
   .schedule-instrument:has(details:not([open])){grid-template-columns:6.1rem minmax(0,1fr)}
   .schedule-instrument:has(details:not([open])) .dial-scale span{visibility:hidden}
-  .schedule-instrument:has(details:not([open])) .dial-ring{mask:radial-gradient(farthest-side,transparent calc(100% - 2px),black calc(100% - 1px))}
+  .schedule-instrument:has(details:not([open])) .dial-ring{--ring-width:1px}
   .schedule-instrument:has(details:not([open])) #schedule-context strong{font-size:.76rem}
   .schedule-instrument:has(details:not([open])) #schedule-context small{font-size:.6rem}
   #saved-operating-plan:has(details:not([open])) #saved-plan-rule{display:none}
@@ -625,6 +628,9 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
   .workspace-nav{margin-inline:-.2rem}
   .steps{gap:.15rem}
   #view-overview .page-head{align-items:start}
+}
+@media(max-width:360px){
+  .schedule-dial:has(.dial-ring:nth-child(6)){--ring-step:3.1%;--ring-width:2px}
 }
 </style>
 <main>
@@ -2203,11 +2209,17 @@ function energyFlow(grid) {
   return grid.watts === 0 ? '0 W' : reading(Math.abs(grid.watts), 'W', 0) + (grid.watts > 0 ? ' import' : ' export');
 }
 
-function daylightWindow(daylight) {
-  if (daylight.kind === 2) return 'Sun above the horizon all day';
-  if (daylight.kind === 3) return 'Sun below the horizon all day';
-  if (daylight.sunrise == null || daylight.sunset == null) return 'Awaiting local time';
-  return 'Sunrise ' + timeText(daylight.sunrise) + ' · Sunset ' + timeText(daylight.sunset) + ' local';
+function daylightWindow(daylight, clock) {
+  if (!daylight?.enabled) return null;
+  const {kind, sunrise, sunset} = daylight;
+  if (kind === 2) return {start:0, minutes:1440, tone:'daylight', hours:'Sun above the horizon all day'};
+  if (kind === 3) return {start:0, minutes:0, tone:'daylight-dark', hours:'Sun below the horizon all day'};
+  if (kind === 1 && sunrise != null && sunset != null) {
+    return {start:sunrise, minutes:(sunset - sunrise + 1440) % 1440, tone:'daylight',
+      hours:'Est. sunrise\u00a0' + timeText(sunrise) + ' · sunset\u00a0' + timeText(sunset) + ' local'};
+  }
+  return {hours:!daylight.configured ? 'Set a location to estimate daylight' :
+    !clock ? 'Awaiting controller clock' : 'Sunrise and sunset estimates unavailable'};
 }
 
 function renderPlanEnergy(follow, grid) {
@@ -2215,15 +2227,16 @@ function renderPlanEnergy(follow, grid) {
   const source = planSource();
   const measured = state.operating.gridSource;
   const gap = follow.daylight;
+  const daylight = daylightWindow(gap, state.clock);
   el('solar-plan-heading').textContent = 'Power for mining';
   el('solar-plan-status').textContent = source ? (follow.fresh ? source + ' · Fresh reading' : source + ' · Waiting for a fresh reading') :
     'Scheduled power';
   el('solar-allocation').hidden = false;
   el('paid-window-title').textContent = 'Paid electricity now';
   el('paid-window-status').textContent = follow.paidReason || '';
-  el('bridge-preset-status').hidden = !gap?.enabled;
-  el('bridge-preset-status').textContent = daylightWindow(gap) + (gap?.active ? ' · Up to ' +
-    timerText(gap.seconds) + ' of gap coverage left' : ' · Daylight gap permission enabled');
+  el('bridge-preset-status').hidden = !daylight;
+  el('bridge-preset-status').textContent = daylight ? daylight.hours + (gap.active ? ' · Up to ' +
+    timerText(gap.seconds) + ' of gap coverage left' : ' · Daylight gap permission enabled') : '';
   el('edit-paid-plan').textContent = 'Edit operating plan';
   el('paid-budget-status').textContent = fmt(state.usedCents, 3) + '¢ estimated paid today' +
     (state.allowance ? ' · ' + fmt(Math.max(0, state.allowance - state.usedCents), 3) + '¢ remaining before reserves' : ' · No daily limit');
@@ -2490,7 +2503,7 @@ function requestSetupData() {
   updateInstallation();
 }
 
-function scheduleWindows(plan, paid) {
+function scheduleWindows(plan, paid, daylight) {
   const windows = [];
   const add = (label, start, end, tone, suffix = '') => {
     const hours = start === end ? 'All day' : timeText(start) + '–' + timeText(end) +
@@ -2499,6 +2512,7 @@ function scheduleWindows(plan, paid) {
   };
   add('Allowed mining hours', plan.start, plan.end, 'operating');
   if (paid?.enabled) add('Paid starts', paid.start, paid.end, 'paid');
+  if (daylight) windows.push({label:'Daylight gaps', ...daylight});
   if (plan.quiet.enabled) add('Quiet Hours', plan.quiet.start, plan.quiet.end, 'quiet');
   for (const [index, rate] of plan.rateWindows.entries()) {
     if (rate.enabled) add('Rate window ' + (index + 1), rate.start, rate.end, 'price',
@@ -3427,7 +3441,8 @@ function planSentence(plan, source) {
   const paid = settings.paidEnabled ? (settings.paidStart === settings.paidEnd ?
     ' Paid starts are allowed during mining hours.' : ' Paid starts are allowed ' +
     planWindow(settings.paidStart, settings.paidEnd) + ' within mining hours.') : ' Paid starts are off.';
-  const gap = settings.gap.enabled ? ' Keep running miners on through daylight gaps up to ' + settings.gap.minutes + ' min.' : '';
+  const gap = settings.gap.enabled ? ' Daylight gap coverage can sustain running miners for up to ' + settings.gap.minutes +
+    ' min during mining hours outside Quiet Hours.' + (settings.paidEnabled ? ' Paid mining takes precedence during its window.' : '') : '';
   const budget = settings.paidEnabled || settings.gap.enabled ?
     (plan.allowance ? ' These permissions share ' + fmt(plan.allowance / 1000, 3) + '¢ per day.' : ' No daily spending limit.') : '';
   return hours + energy + paid + gap + budget + (plan.weekend?.enabled ? ' Weekend hours and rates are set separately.' : '');
@@ -3522,6 +3537,7 @@ function renderOperatingOverview() {
     settings.paidEnd = settings.weekendPaidEnd;
   }
   const paid = {enabled:settings.paidEnabled, start:settings.paidStart, end:settings.paidEnd};
+  const daylight = daylightWindow(state.energy?.follow?.daylight, state.clock);
   const tracks = el('schedule-tracks');
   const clock = el('schedule-time'), dial = el('schedule-dial');
   if (state.clock && state.time?.epoch > 0) {
@@ -3535,22 +3551,26 @@ function renderOperatingOverview() {
     clock.textContent = '—';
     delete dial.dataset.clock;
   }
-  const fingerprint = JSON.stringify([active, paid]);
+  const fingerprint = JSON.stringify([active, paid, daylight]);
   if (tracks.dataset.plan !== fingerprint) {
     tracks.dataset.plan = fingerprint;
     const schedule = {...active, rateWindows:active.rateWindows.map(r => ({...r, rate:r.rate * 1000}))};
-    const windows = scheduleWindows(schedule, paid);
-    el('schedule-summary').textContent = 'Mining · ' + windows[0].hours;
+    const windows = scheduleWindows(schedule, paid, daylight);
+    const summary = el('schedule-summary');
+    summary.replaceChildren('Mining · ' + windows[0].hours);
+    if (daylight) summary.append(entry('span', daylight.hours, daylight.tone));
     const rings = el('dial-rings');
     tracks.replaceChildren();
     rings.replaceChildren();
-    for (const [index, {label, start, end, tone, hours}] of windows.entries()) {
-      const arc = entry('i', '', 'dial-ring ' + tone);
-      arc.style.setProperty('--index', index);
-      arc.style.setProperty('--start', start / 4 + 'deg');
-      const minutes = (end - start + 1440) % 1440 || 1440;
-      arc.style.setProperty('--sweep', minutes / 4 + 'deg');
-      rings.append(arc);
+    for (const {label, start, end, tone, hours, minutes} of windows) {
+      if (start != null) {
+        const arc = entry('i', '', 'dial-ring ' + tone);
+        arc.style.setProperty('--index', rings.childElementCount);
+        arc.style.setProperty('--start', start / 4 + 'deg');
+        const sweep = minutes ?? ((end - start + 1440) % 1440 || 1440);
+        arc.style.setProperty('--sweep', sweep / 4 + 'deg');
+        rings.append(arc);
+      }
       const line = entry('div', '', tone);
       line.append(entry('dt', label), entry('dd', hours));
       tracks.append(line);

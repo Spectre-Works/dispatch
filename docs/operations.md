@@ -47,10 +47,15 @@ for a set duration or until you resume. The indefinite pause survives a restart.
 | **Weekend plan** | Supplies separate mining hours, paid hours, Quiet Hours, and rate windows on Saturday and Sunday. The new day takes effect at local midnight. |
 
 On Overview, **Operating schedule → Daily hours** shows the active day’s mining,
-paid-start, quiet, and rate windows. When the controller has a valid clock,
-the dial’s pointer shows its reported local time. Read the rings clockwise
-from midnight, working from the outer ring inward in the order listed. **What happens next** explains
-the next decision point.
+paid-start, quiet, and rate windows. With daylight gap coverage enabled, the
+amber ring spans estimated sunrise to sunset. The local estimates are visible
+even with **Daily hours** collapsed. Continuous daylight fills the ring, and
+continuous darkness leaves it unlit. The schedule shows a status message while
+estimates are unavailable. Gap coverage follows mining hours and Quiet Hours.
+When the controller has a valid clock, the pointer shows its reported local
+time. Read the rings clockwise from midnight, working from the outer ring
+inward in the order listed. **What happens next** explains the next decision
+point.
 
 Begin with **Scheduled mining**, **Surplus only**, or **Solar with gap
 coverage**, then review the populated settings. Paid permissions can overlap.
