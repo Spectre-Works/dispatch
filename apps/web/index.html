@@ -1497,6 +1497,7 @@ let zones, scanRequested = false, scanWatching = false, scanStarted = false;
 const commissioning = new URLSearchParams(location.hash.slice(1));
 if (location.hash) history.replaceState(null, '', location.pathname);
 const fmt = (n, digits = 1) => n == null ? 'Unknown' : Number(n).toLocaleString(undefined, {maximumFractionDigits:digits});
+const paidTodayText = () => fmt(state.usedCents, 3) + '¢';
 const unit = (n, suffix) => n == null ? 'Unknown' : fmt(n) + ' ' + suffix;
 const yesno = (v, yes, no) => v == null ? 'Unknown' : v ? yes : no;
 const timeText = n => [Math.floor(n / 60), n % 60].map(v => String(v).padStart(2, '0')).join(':');
@@ -2251,7 +2252,7 @@ function renderPlanEnergy(follow, grid) {
   el('bridge-preset-status').textContent = daylight ? daylight.hours + (gap.active ? ' · Up to ' +
     timerText(gap.seconds) + ' of gap coverage left' : ' · Daylight gap permission enabled') : '';
   el('edit-paid-plan').textContent = 'Edit operating plan';
-  el('paid-budget-status').textContent = fmt(state.usedCents, 3) + '¢ estimated paid today' +
+  el('paid-budget-status').textContent = paidTodayText() + ' estimated paid today' +
     (state.allowance ? ' · ' + fmt(Math.max(0, state.allowance - state.usedCents), 3) + '¢ remaining before reserves' : ' · No daily limit');
   const total = follow.runningWatts;
   const covered = follow.solarCoveredWatts;
@@ -3010,6 +3011,7 @@ function renderActivity() {
   const devices = activityEquipment();
   const selector = el('activity-miner');
   if (activityFilter && !devices.has(activityFilter)) activityFilter = '';
+  const liveToday = activityRange === 'today' && !activityFilter;
   const options = [['', 'All equipment'], ...[...devices].map(([key, d]) => [key, d.label])];
   if (selector.options.length !== options.length ||
       options.some(([key, name], i) => selector.options[i].value !== key || selector.options[i].text !== name)) {
@@ -3028,7 +3030,10 @@ function renderActivity() {
   const covered = metered.length ? total(p => weekly ? p.daily.kwh : p.spend.paid) : null;
   const recorded = weekly ? points.filter(p => p.daily).length : points.filter(p => p.sample).length;
   const bridges = activityVisibleEvents().filter(event => event.edge === 'start' && event.lane === 'bridge').length;
-  el('activity-metrics').replaceChildren(activityMetric(weekly ? 'Estimated paid cost' : 'Recorded paid cost', activityCurrency(cost)),
+  const costMetric = activityMetric(liveToday ? 'Estimated paid today' : weekly ? 'Estimated paid cost' : 'Recorded paid cost',
+    liveToday ? paidTodayText() : activityCurrency(cost));
+  if (liveToday) costMetric.lastElementChild.id = 'activity-paid-today';
+  el('activity-metrics').replaceChildren(costMetric,
     activityMetric(weekly ? 'Metered miner energy' : 'Tariff-accounted energy',
       covered == null ? '—' : weekly ? reading(covered, 'kWh', 2) : covered >= 1000 ? reading(covered / 1000, 'kWh', 2) : reading(covered, 'Wh', 1)),
     activityMetric(weekly ? 'Days with evidence' : 'Bridge starts recorded',
@@ -3062,7 +3067,8 @@ function renderActivity() {
   else if (!note && !weekly && !recorded) note = 'No readings in this range. New readings appear as each interval closes.';
   else if (!note && weekly) note = 'Today’s totals are still accumulating. Event markers show when actions occurred.';
   else if (!note) note = recorded + ' of ' + points.filter(p => !p.pending).length +
-    ' completed intervals recorded. Blank segments indicate unavailable readings.';
+    ' completed intervals recorded. ' + (liveToday ? 'The paid total updates as meter readings arrive.' :
+      'Blank segments indicate unavailable readings.');
   el('activity-status').textContent = note;
   const scrub = el('activity-scrub');
   scrub.max = Math.max(0, points.length - 1);
@@ -3877,7 +3883,8 @@ function paint(next) {
     !state.devices.some(d => d.ip) || state.planReady === false ? '' :
     budgetBlocked ? 'A meter gap blocks paid operation. Solar can still run when estimated coverage is sufficient.' :
     changeSummary;
-  el('budget-value').textContent = fmt(state.usedCents, 3) + '¢';
+  const paidToday = paidTodayText();
+  el('budget-value').textContent = paidToday;
   el('budget').textContent = (state.allowance ? 'of ' + fmt(state.allowance, 3) + '¢ allowance' : 'No spending limit') +
     (state.complete && state.clock ? (state.today?.gapAccepted ? ' · meter gap acknowledged' : '') : ' · accounting incomplete');
   el('budget-meter').hidden = !state.allowance;
@@ -3920,7 +3927,11 @@ function paint(next) {
   if (el('miner-control').open) showCurrentOverride();
   if (el('power-mode').open) renderPowerMode();
   if (el('power-test').open) renderPowerTest();
-  if (view === 'activity') renderHistory();
+  if (view === 'activity') {
+    renderHistory();
+    const liveCost = el('activity-paid-today');
+    if (liveCost && liveCost.textContent !== paidToday) liveCost.textContent = paidToday;
+  }
 }
 function statusIsStale() {
   return statusReadFailed || Date.now() - lastStatusAt >= statusStaleAfter;

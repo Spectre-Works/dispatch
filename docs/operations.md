@@ -117,6 +117,9 @@ Activity keeps up to 48 hours of five-minute readings, seven days of
 15-minute summaries, and 30 days of hourly summaries. Summaries preserve
 average, minimum and maximum power, reading counts, energy and estimated
 cost. Select an interval to inspect finer history when it is still available.
+In **Today → All equipment**, the paid total updates from the same
+meter readings as Overview. The chart and energy total update as intervals
+close. An equipment filter shows the selected equipment’s recorded intervals.
 Daily evidence remains available for seven days. Relay and preset changes
 are stored with original timestamps in a separate event log.
 
