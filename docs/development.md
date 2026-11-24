@@ -77,6 +77,55 @@ use the LAN dashboard and status sampler to verify the build booted, retained
 its expected settings, and continued to receive fresh readings.
 [Hardware and partition map](../hardware/dispatch-01/README.md)
 
+### Network Update bench
+
+Use a controller with the current partition layout and a rollback-capable
+bootloader. Builds with a release CA, a signing public key, and a
+`vMAJOR.MINOR.PATCH` project version expose Network Update under Settings.
+Use a fresh SDK configuration to pick up the rollback setting.
+
+```sh
+idf.py -C apps/controller -B /private/bench/build \
+  -DSDKCONFIG=/private/bench/sdkconfig -DPROJECT_VER=v0.0.1 \
+  -DDISPATCH_OTA_CA=/private/bench/ca.pem \
+  -DDISPATCH_OTA_SIGNER=/private/bench/signer-public.pem \
+  -DDISPATCH_OTA_RELEASE_BASE=https://BENCH_IP:8443/releases build
+```
+
+Use a short-lived fixture CA and a server certificate for the bench address.
+Keep the CA key, server key, and release signing key outside the checkout.
+On a development board verified to be running `ota_0` with the current
+partition table, provision the rollback bootloader and first app over USB.
+
+```sh
+idf.py -C apps/controller -B /private/bench/build -p "$dispatch_port" bootloader-flash app-flash
+```
+
+This writes the bootloader and first application slot. Verify that the dashboard
+returns and shows the intended installed version. Once OTA has selected
+`ota_1`, ordinary `app-flash` still writes `ota_0`. For deliberate USB
+recovery to `ota_0`, first write and verify the known-good app over USB,
+then use `erase-otadata` to restore the bootloader's default slot selection.
+That operation clears slot selection and rollback state. It preserves NVS
+and the archive and operations partitions.
+
+Build subsequent versions with the same trust inputs and sign each image as
+described in the [packaging instructions](../packaging/README.md#prepare-a-network-update-asset).
+Use the [HTTPS fixture](../tests/network_update_fixture.py) with each image
+and manifest in a directory named for its version under `--releases`. In
+that directory, set `selected` to a line such as `v0.0.2 good`. The fixture
+supports `badsig`, `badhash`, and `truncated` for testing rejection and
+interruption. Use `-DDISPATCH_OTA_TRIAL_FAIL=ON` for a disposable target that
+resets before it confirms its trial boot.
+
+Enable checks in **Settings → Network Update** after Wi-Fi and clock sync.
+Confirm the unread signal, then select **Install and restart**. Verify that
+the version changes and the USB log confirms the newly active slot. Repeat
+with a newer version to exercise both slots. Offer a reset-before-confirm
+image and verify that the previous dashboard returns and reports the failed
+trial. Confirm that the failed version stays unavailable on the next check.
+Disable release checks at the end of the exercise.
+
 ## Provision the controller
 
 1. In a private interactive terminal with [pySerial](../tools/README.md#usb-pairing)

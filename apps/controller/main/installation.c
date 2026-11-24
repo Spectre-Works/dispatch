@@ -4,6 +4,7 @@
 #include "integration_profile.h"
 
 #include "discovery.h"
+#include "network_update.h"
 #include "fronius.h"
 #include "network.h"
 #include "preset_credentials.h"
@@ -2108,6 +2109,7 @@ static bool test_budget_available(unsigned slot, const dispatch_inputs *in, unsi
 
 static const char *test_start_block(unsigned slot, const dispatch_inputs *in, bool queued)
 {
+    if (!queued && network_update_staged()) return "Wait for the controller to restart.";
     if (!in->outlet[slot].present) return "Pair a metered outlet first.";
     if (!mapping_allows_control(slot)) return "Confirm what this outlet powers first.";
     if (!state.enabled) return "Enable outlet control before starting the test.";
@@ -4590,6 +4592,7 @@ static void worker(void *arg)
         timeline_flush_events();
         unlock();
         if (!commanded && !poll_equipment(false) && !poll_equipment(true)) {
+            network_update_tick();
             switch (background++ % 8) {
                 case 0: solar_tick(); break;
                 case 1: gx_tick(); break;
@@ -4600,7 +4603,7 @@ static void worker(void *arg)
                 case 6:
                     if (network_uptime() >= next_detection && detect_power_mode())
                         next_detection = network_uptime() + 15;
-                    else discovery_tick();
+                    else if (!network_update_active()) discovery_tick();
                     break;
                 case 7:
                     if (network_uptime() >= next_notification) {
@@ -4611,6 +4614,12 @@ static void worker(void *arg)
             }
         }
         lock();
+        if (!commanded && network_update_staged() && !testing_outlet(power_test.slot)) {
+            const bool saved = (!dirty && !storage_error) || save() == ESP_OK;
+            unlock();
+            network_update_restart(saved);
+            lock();
+        }
         worker_stack = uxTaskGetStackHighWaterMark(NULL);
         unlock();
         if (now >= next_log) {
@@ -4625,6 +4634,14 @@ static void worker(void *arg)
         }
         vTaskDelay(pdMS_TO_TICKS(50));
     }
+}
+
+bool installation_boot_healthy(void)
+{
+    lock();
+    const bool healthy = worker_stack && !storage_error;
+    unlock();
+    return healthy;
 }
 
 static void migrate_legacy(void)

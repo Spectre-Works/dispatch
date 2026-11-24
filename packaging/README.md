@@ -34,3 +34,26 @@ public distribution.
 The bundle includes the license map and terms. Controller USB installation
 and recovery are documented in the
 [development guide](../docs/development.md#build-and-flash).
+
+## Prepare a Network Update asset
+
+Build the app with a version such as `v0.0.2` and the trusted CA and release
+signing public key. Follow the [bench instructions](../docs/development.md#network-update-bench)
+to provision the rollback bootloader. The smallest app slot limits the image
+to 3.25 MiB. Generate the manifest from the app image using OpenSSL and the
+corresponding ECDSA P-256 private key.
+
+```sh
+python3 packaging/prepare_network_update.py /private/release/dispatch01.bin \
+  --signing-key /private/release/signer.key \
+  --output /private/release/dispatch01-ota-v1.txt
+```
+
+For an approved GitHub release, the tag must equal the embedded version and
+the assets must be named `dispatch01-ota-v1.txt` and `dispatch01.bin`. The
+controller's default release base is the DISPATCH repository on GitHub. It
+checks the latest release permalink and fetches the image from the signed
+version's release path. The configured CA PEM must cover the GitHub and
+release-asset TLS chains. The prototype uses anonymous HTTPS and requires
+the two assets to be publicly readable for GitHub deployment. Keep release
+keys outside the package and repository.

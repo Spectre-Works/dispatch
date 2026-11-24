@@ -645,7 +645,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
     <button type="button" data-view="energy"><i class="nav-icon icon-energy" aria-hidden="true"></i>Energy</button>
     <button type="button" data-view="mining"><i class="nav-icon icon-mining" aria-hidden="true"></i>Mining path</button>
     <button type="button" data-view="activity"><i class="nav-icon icon-activity" aria-hidden="true"></i>Activity</button>
-    <button type="button" data-view="settings"><i class="nav-icon icon-settings" aria-hidden="true"></i>Settings</button>
+    <button type="button" data-view="settings"><i class="nav-icon icon-settings" aria-hidden="true"></i>Settings <span id="update-nav-dot" aria-label="Unread network update" hidden>●</span></button>
   </nav>
   <div class="masthead-actions">
     <div class="connection-status" id="connection-status" hidden>
@@ -996,6 +996,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
       <button type="button" data-settings="connection-settings">Connections</button>
       <button type="button" data-settings="clock-settings">Clock</button>
       <button type="button" data-settings="notification-settings">Notifications</button>
+      <button type="button" data-settings="network-update-settings">Network Update <span id="update-settings-dot" aria-label="Unread network update" hidden>●</span></button>
       <button type="button" data-settings="profile-settings">Integration profiles</button>
       <button type="button" data-settings="transfer-settings">Transfer</button>
     </nav>
@@ -1361,6 +1362,19 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
       </form>
       <p id="notification-test-status" role="status"></p>
       <p id="notification-message" role="status"></p>
+    </section>
+    <section id="network-update-settings" hidden>
+      <h3>Network Update</h3>
+      <p class="muted">The controller checks for releases when enabled. Installation starts after you approve it and ends with a restart.</p>
+      <p id="update-installed"></p>
+      <p id="update-status" role="status"></p>
+      <div class="row">
+        <button type="button" id="update-enable" hidden></button>
+        <button type="button" id="update-check" hidden>Check now</button>
+        <button type="button" id="update-seen" hidden>Mark as read</button>
+        <button class="primary" type="button" id="update-install" hidden>Install and restart</button>
+      </div>
+      <p id="update-message" role="status"></p>
     </section>
     <section id="profile-settings" hidden>
       <div class="section-head"><h3>Integration profiles</h3></div>
@@ -3921,6 +3935,7 @@ function paint(next) {
   renderOperatingOverview();
   renderConnection();
   renderNotifications();
+  renderNetworkUpdate();
   renderEnergy();
   if (view === 'settings') renderSettingsStatus();
   if (view === 'mining') renderMining();
@@ -5267,6 +5282,45 @@ function renderNotifications() {
   const feedback = el('notification-test-status');
   if (feedback.textContent !== testText) feedback.textContent = testText;
 }
+
+function renderNetworkUpdate() {
+  const update = state.networkUpdate || {};
+  const ready = !update.phase;
+  el('update-nav-dot').hidden = el('update-settings-dot').hidden = !update.unread;
+  el('update-installed').textContent = update.installed ? 'Installed ' + update.installed : '';
+  el('update-enable').hidden = !update.supported;
+  el('update-enable').disabled = !ready;
+  el('update-enable').textContent = update.enabled ? 'Turn off checks' : 'Enable checks';
+  el('update-check').hidden = !update.enabled;
+  el('update-check').disabled = !ready;
+  el('update-seen').hidden = !update.unread;
+  el('update-install').hidden = !update.offered;
+  el('update-install').disabled = !ready;
+  const progress = update.total ? Math.floor(100 * update.received / update.total) : 0;
+  const phases = ['', 'Check queued.', 'Checking for releases…', 'Installation queued.',
+    'Downloading ' + (update.offered || '') + ' · ' + progress + '%',
+    'Update verified. Waiting for the controller to finish its current work.', 'Restarting…'];
+  const results = ['', 'The installed version is current.', 'Update ' + update.offered + ' is available.',
+    'The controller could not reach the update feed or finish the download.',
+    'The release manifest failed verification.', 'The firmware image failed verification.',
+    'The controller could not stage or activate the update.', 'The controller ran out of memory for the update.',
+    'The previous update failed its trial boot. The controller restored the earlier firmware.'];
+  const message = !update.supported ? 'Network Update is unavailable in this build or on this partition layout.' :
+    !update.enabled ? 'Release checks are off.' : phases[update.phase] || results[update.result] || 'Ready to check.';
+  if (el('update-status').textContent !== message) el('update-status').textContent = message;
+}
+
+el('update-enable').onclick = () =>
+  change('action', {mode:'update-enable',enabled:state.networkUpdate.enabled ? 0 : 1}, 'update-message');
+el('update-check').onclick = () => change('action', {mode:'update-check'}, 'update-message');
+el('update-seen').onclick = () =>
+  change('action', {mode:'update-seen',version:state.networkUpdate.offered}, 'update-message');
+el('update-install').onclick = () => {
+  const version = state.networkUpdate.offered;
+  if (confirm('Install ' + version + ' and restart the controller?')) {
+    change('action', {mode:'update-install',version}, 'update-message');
+  }
+};
 
 el('open-notifications').onclick = () => {
   jumpTo('settings', 'notification-settings');

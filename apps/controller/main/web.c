@@ -3,6 +3,7 @@
 #include "installation.h"
 #include "discovery.h"
 #include "network.h"
+#include "network_update.h"
 #include "profile_store.h"
 #include "timeline.h"
 
@@ -652,6 +653,15 @@ static esp_err_t status_page(httpd_req_t *request)
         snapshot.notifications.ip, snapshot.notifications.port, (unsigned)snapshot.notifications.sent,
         (unsigned)snapshot.notifications.failed, (unsigned)snapshot.notifications.dropped,
         snapshot.notifications.pending, (unsigned)snapshot.notifications.test);
+    network_update_view update;
+    network_update_read(&update);
+    add(request, "\"networkUpdate\":{\"supported\":%s,\"enabled\":%s,\"unread\":%s,"
+        "\"offered\":\"%s\",\"phase\":%u,\"result\":%u,\"received\":%lu,\"total\":%lu",
+        truth(update.supported), truth(update.enabled), truth(update.unread), update.offered,
+        (unsigned)update.phase, (unsigned)update.result, (unsigned long)update.received, (unsigned long)update.total);
+    const char *safe_version = strspn(update.installed, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.+-_/") ==
+        strlen(update.installed) ? update.installed : "";
+    add(request, ",\"installed\":\"%s\"},", safe_version);
     energy_status(request);
     home_status(request);
     add(request, "\"mqtt\":{\"ip\":\"%s\",\"port\":%u,\"tlsName\":\"%s\","
@@ -1351,6 +1361,21 @@ static esp_err_t apply_action(const char **conflict, const char **error)
     char mode[16];
     if (!field("mode", mode, sizeof(mode))) {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (!strcmp(mode, "update-enable")) {
+        int enabled;
+        *conflict = "Network Update is unavailable or already working.";
+        return integer("enabled", 0, 1, &enabled) ? network_update_enable(enabled != 0) : ESP_ERR_INVALID_ARG;
+    }
+    if (!strcmp(mode, "update-check")) {
+        *conflict = "Enable Network Update, wait for Wi-Fi and clock sync, then allow 15 seconds between checks.";
+        return network_update_check();
+    }
+    if (!strcmp(mode, "update-seen") || !strcmp(mode, "update-install")) {
+        char version[32];
+        *conflict = "Wait for a current update offer and for any update work to finish.";
+        if (!field("version", version, sizeof(version))) return ESP_ERR_INVALID_ARG;
+        return !strcmp(mode, "update-seen") ? network_update_seen(version) : network_update_install(version);
     }
     if (!strcmp(mode, "solar-ecu")) {
         *conflict = "Check the saved bridge address, or turn off Follow solar generation before removing the source.";
