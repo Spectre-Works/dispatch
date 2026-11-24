@@ -63,12 +63,9 @@ static esp_err_t browse(bool *limited)
     if (!station || esp_netif_get_ip_info(station, &interface) != ESP_OK || !interface.ip.addr) {
         return ESP_ERR_INVALID_STATE;
     }
-    esp_err_t result = mdns_init();
-    if (result != ESP_OK) {
-        return result;
-    }
+    if (!network_mdns_ready()) return ESP_ERR_INVALID_STATE;
     mdns_result_t *results = NULL;
-    result = mdns_query_ptr("_shelly", "_tcp", BROWSE_MS, DISCOVERY_LIMIT + 1, &results);
+    const esp_err_t result = mdns_query_ptr("_shelly", "_tcp", BROWSE_MS, DISCOVERY_LIMIT + 1, &results);
     unsigned responses = 0;
     for (const mdns_result_t *entry = results; entry; entry = entry->next) {
         ++responses;
@@ -93,7 +90,6 @@ static esp_err_t browse(bool *limited)
     }
     *limited |= responses > DISCOVERY_LIMIT;
     mdns_query_results_free(results);
-    mdns_free();
     return result;
 }
 

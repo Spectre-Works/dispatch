@@ -598,7 +598,8 @@ static esp_err_t status_page(httpd_req_t *request)
     }
     json_begin(request);
     if (network_setup_active()) {
-        return httpd_resp_sendstr(request, "{\"setup\":true}");
+        add(request, "{\"setup\":true,\"hostname\":\"%s\"}", network_hostname());
+        return json_end(request);
     }
     installation_read(&snapshot);
     web_stack = uxTaskGetStackHighWaterMark(NULL);
@@ -655,9 +656,9 @@ static esp_err_t status_page(httpd_req_t *request)
         snapshot.notifications.pending, (unsigned)snapshot.notifications.test);
     network_update_view update;
     network_update_read(&update);
-    add(request, "\"networkUpdate\":{\"supported\":%s,\"enabled\":%s,\"unread\":%s,"
+    add(request, "\"networkUpdate\":{\"supported\":%s,\"enabled\":%s,\"unread\":%s,\"github\":%s,"
         "\"offered\":\"%s\",\"phase\":%u,\"result\":%u,\"received\":%lu,\"total\":%lu",
-        truth(update.supported), truth(update.enabled), truth(update.unread), update.offered,
+        truth(update.supported), truth(update.enabled), truth(update.unread), truth(update.github), update.offered,
         (unsigned)update.phase, (unsigned)update.result, (unsigned long)update.received, (unsigned long)update.total);
     const char *safe_version = strspn(update.installed, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.+-_/") ==
         strlen(update.installed) ? update.installed : "";

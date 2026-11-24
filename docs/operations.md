@@ -5,7 +5,8 @@
 
 Open the controller's LAN address and unlock it with the owner key. For a new
 development unit, start with [USB pairing and Wi-Fi setup](development.md#provision-the-controller).
-Use **Lock browser** on a shared device to clear its saved sign-in.
+Leave **Remember this browser** clear on a shared device. Use **Lock browser**
+to clear its saved sign-in.
 
 ## Pair equipment and enable control
 
@@ -123,7 +124,8 @@ close. An equipment filter shows the selected equipment’s recorded intervals.
 Daily evidence remains available for seven days. Relay and preset changes
 are stored with original timestamps in a separate event log.
 
-Use **Settings → Transfer** to export version 4 or review a version 3 or 4
+Use **Settings → Transfer → Export private backup** to export version 4,
+or use the same screen to review a version 3 or 4
 configuration. Import applies the plan and all equipment slots together and
 opens Preview. Use the **Activity** support report for sharing diagnostics.
 [Transfer contents and privacy](configuration-transfer.md)

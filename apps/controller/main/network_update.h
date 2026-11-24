@@ -20,7 +20,7 @@ typedef enum {
 
 typedef struct {
     char installed[32], offered[32];
-    bool supported, enabled, unread;
+    bool supported, enabled, unread, github;
     update_phase phase;
     update_result result;
     uint32_t received, total;

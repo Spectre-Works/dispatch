@@ -4,3 +4,5 @@
 
 See the [Brand Policy](../../legal/terms/brand-policy-v1.0.md) for use of
 official marks and artwork.
+Contact [SPECTRE WORKS](mailto:contact@spectreworks.io) for brand approvals
+and other trademark questions.

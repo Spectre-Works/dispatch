@@ -4,18 +4,23 @@
 
 ## Reporting security issues
 
-Open a [GitHub issue](https://github.com/Spectre-Works/dispatch/issues/new)
-with the affected version, component, and a brief description of the impact.
-Keep issue reports suitable for public disclosure. Reports must omit
-credentials, identifying logs or screenshots, and details that would let
-someone exploit the vulnerability.
+Email suspected vulnerabilities privately to [contact@spectreworks.io](mailto:contact@spectreworks.io).
+Include the firmware version or commit, affected component, and impact.
+Use synthetic examples and redact credentials, identifying logs, and screenshots.
+Use [GitHub issues](https://github.com/Spectre-Works/dispatch/issues/new) for ordinary bugs and feature requests.
+
+This repository contains the DISPATCH/01 developer preview. Include the
+exact build when reporting a problem so SPECTRE WORKS can identify the
+affected source and firmware.
 
 ## Supported deployment
 
 DISPATCH/01 is designed for operation on a trusted local network. The
-controller requires its owner key for administrative access. Direct
-internet exposure, including router port forwarding, is outside the
-supported deployment.
+controller requires its owner key for administrative access. The dashboard
+uses HTTP. Use it on a trusted LAN where only trusted devices can reach it.
+Keep router port forwarding and public access disabled. The owner key has
+no expiry and can be replaced through physical USB pairing when needed.
+Choose **Remember this browser** only on a device you control.
 
 ## Repository submissions
 

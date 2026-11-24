@@ -18,8 +18,7 @@ idf.py -C apps/controller build
 idf.py -C apps/controller size
 ```
 
-On the existing development host, `~/.config/esp32-dev/activate.bash` is the
-local launcher for the pinned SDK. The project entry point, managed component
+The project entry point, managed component
 lockfile, and default SDK configuration are under [apps/controller](../apps/controller/README.md).
 The build embeds [the dashboard](../apps/web/index.html) in plain and gzipped
 form. Editing it takes effect on the controller after an application build and
@@ -50,8 +49,8 @@ sha256sum -c /private/path/original.sha256
 The initial full flash writes the bootloader, partition table, OTA metadata,
 and first application slot. Use `app-flash` for subsequent development updates
 with the same layout and slot. It preserves NVS and the existing partition
-configuration. USB is the development and recovery interface. The second app
-slot is reserved.
+configuration. USB is the development and recovery interface. Network Update
+uses the second app slot.
 
 | Board state | Command |
 | --- | --- |
@@ -142,21 +141,40 @@ Disable release checks at the end of the exercise.
    separate owner key. When `qrencode` is installed, the tool can show one QR
    to join setup Wi-Fi and another to open the setup form with the keys
    filled in. Use `--ntp` to prefill a preferred time server.
-3. Save and reconnect your browser device to the selected LAN. Find the
-   controller's DHCP address in the router or serial console and unlock the
-   dashboard with the owner key. A DHCP reservation keeps its address stable.
-   Use **Lock browser** to remove the saved key on a shared browser.
+3. Save and reconnect your browser device to the selected LAN. Open the
+   `http://dispatch-….local/` link shown on the setup screen and unlock with
+   the owner key. If local name lookup is unavailable, find the controller's
+   hostname or DHCP address in the router, or read its address from the USB
+   console after startup. A DHCP reservation keeps the IP address stable.
+   Choose **Remember this browser** on a personal device to save sign-in for
+   future visits. **Lock browser** clears the saved sign-in.
 
-To reopen setup on a configured unit, hold the front user button during
-power-up, then run the USB pairing command again. To generate a phone sign-in
-QR on the LAN, run the tool with
-`--dashboard CONTROLLER_IP --owner-key-file /private/path/owner`. It uses the
-existing owner key and requires `qrencode`.
+To generate a phone sign-in QR on the LAN, run the tool with
+`--dashboard CONTROLLER_IP --owner-key-file /private/path/owner`. Treat the
+QR like the owner key. This option requires `qrencode`.
 
 The setup network uses a temporary WPA2 passphrase. The station dashboard
 uses HTTP with a separate owner key on a trusted LAN. Keep flash backups and
 credentials outside version control. Physical flash access is part of the
-trust boundary. [Security guidance](../SECURITY.md)
+trust boundary. The owner key is valid until you choose to replace it.
+Browser sign-ins saved by older builds require a one-time sign-in with the
+existing key when upgrading to the opt-in browser setting. [Security guidance](../SECURITY.md)
+
+### Recover setup or retire a controller
+
+- **Wrong Wi-Fi details or lost owner key.** Hold the front user button during
+  power-up and run USB pairing again. Use the original owner-key file to keep
+  that key, or choose a new file to replace it. Re-enter the Wi-Fi settings.
+  Re-pairing preserves equipment, the operating plan, and history. Review
+  the current control state after reconnecting.
+- **Transfer or retire the device.** Export a private configuration backup
+  first if you need it. Remove the device from service and verify its USB port.
+  A deliberate full erase deletes Wi-Fi credentials, owner keys, equipment,
+  plans, and history. To reuse the controller, [flash and provision it again](#build-and-flash).
+
+  ```sh
+  idf.py -C apps/controller -p "$dispatch_port" erase-flash
+  ```
 
 ## Checks and simulation
 

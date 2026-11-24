@@ -6,7 +6,8 @@
 The browser produces a JSON object with `format` set to
 `dispatch-configuration` and `version` set to `4`. The document contains
 the saved operating plan and the equipment needed to run it. Keep
-it private if the equipment addresses and IDs identify your network.
+it private. It contains equipment addresses, IDs, and operating details.
+When daylight gap coverage is enabled it can include your site coordinates.
 
 | Field | Representation |
 | --- | --- |
@@ -25,7 +26,7 @@ and, when enabled, `minutes` from 5 to 60 plus signed decimal `latitude` and
 `longitude` in degrees. The setup form limits the coordinates to four
 decimal places.
 
-In **Settings → Configuration transfer**, choose **Export configuration**
+In **Settings → Transfer**, choose **Export private backup**
 to save a file or **Choose file to import** to review one. **Apply in
 Preview** replaces all eight slots and the plan together. Version 3 exports are also
 accepted and populate slots 0–3, leaving slots 4–7 empty. A
@@ -45,4 +46,5 @@ and rate windows apply Monday through Friday. The default rate and
 daily allowance apply to both day groups.
 
 Use the separate support report to share diagnostics. It omits addresses,
-device IDs, and credentials.
+device IDs, coordinates, and credentials. Review timestamps, usage, and
+operating history before sharing.

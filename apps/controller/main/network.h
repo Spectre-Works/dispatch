@@ -22,6 +22,8 @@ void network_start(void);
 void network_tick(void);
 bool network_setup_active(void);
 bool network_online(void);
+const char *network_hostname(void);
+bool network_mdns_ready(void);
 uint32_t network_epoch(void);
 bool network_authorized(const char *key);
 bool network_valid_key(const char *value);

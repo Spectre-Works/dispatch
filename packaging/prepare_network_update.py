@@ -10,6 +10,8 @@ import re
 import struct
 import subprocess
 
+RELEASE_VERSION = re.compile(r"v(0|[1-9][0-9]{0,5})(\.(0|[1-9][0-9]{0,5})){2}")
+
 
 def manifest(image_path: Path, signing_key: Path) -> bytes:
     max_image = 0x340000
@@ -20,8 +22,8 @@ def manifest(image_path: Path, signing_key: Path) -> bytes:
             or struct.unpack_from("<I", image, 32)[0] != 0xABCD5432
             or image[80:112].split(b"\0", 1)[0] != b"dispatch01"):
         raise ValueError("Expected a DISPATCH/01 app image that fits the 3.25 MiB OTA slot")
-    version = image[48:80].split(b"\0", 1)[0]
-    if not re.fullmatch(rb"v(0|[1-9][0-9]{0,5})(\.(0|[1-9][0-9]{0,5})){2}", version):
+    version = image[48:80].split(b"\0", 1)[0].decode("ascii", errors="replace")
+    if not RELEASE_VERSION.fullmatch(version):
         raise ValueError("Build with a vMAJOR.MINOR.PATCH project version")
     key_info = subprocess.check_output(
         ["openssl", "pkey", "-in", signing_key, "-text_pub", "-noout"], text=True
@@ -29,7 +31,7 @@ def manifest(image_path: Path, signing_key: Path) -> bytes:
     if "ASN1 OID: prime256v1" not in key_info:
         raise ValueError("Expected an ECDSA P-256 signing key")
     signed = b"\n".join((
-        b"DISPATCH/01 OTA v1", version, str(len(image)).encode(),
+        b"DISPATCH/01 OTA v1", version.encode("ascii"), str(len(image)).encode(),
         hashlib.sha256(image).hexdigest().encode(), b"",
     ))
     signature = subprocess.check_output(

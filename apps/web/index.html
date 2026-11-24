@@ -668,10 +668,12 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
       <label for="owner-key">Owner or setup key</label>
       <input id="owner-key" name="key" type="password" required pattern="[a-f0-9]{32}|[0-9]{12}" maxlength="32"
         spellcheck="false" aria-describedby="key-help">
-      <p class="muted" id="key-help">This browser remembers your owner key until you lock it.</p>
+      <p class="muted" id="key-help">Use the dashboard on a trusted local network.</p>
+      <label class="check-label"><input name="remember" type="checkbox">Remember this browser</label>
       <button class="primary" id="unlock">Unlock</button>
       <p id="message" role="status"></p>
-      <details class="key-note"><summary>Which key do I use?</summary><p>Use the 12-digit setup key during Wi-Fi setup. On your home network, use the 32-character owner key from USB pairing.</p></details>
+      <details class="key-note"><summary>Which key do I use?</summary><p>Use the 12-digit setup key while joined to the temporary DISPATCH Wi-Fi. On your home network, use the 32-character owner key from USB pairing. The owner key has no expiry.</p></details>
+      <details class="key-note"><summary>Lost your owner key?</summary><p>Hold the controller’s front button during power-up and run USB pairing again. Use the existing key file to keep your key, or a new key file to replace a lost key.</p></details>
     </div>
   </section>
 </form>
@@ -693,10 +695,12 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
   <h2 id="wifi-handoff-heading" tabindex="-1">Open DISPATCH on your home network</h2>
   <ol>
     <li>Reconnect this phone or computer to the Wi-Fi network you selected.</li>
-    <li>Find the controller’s new IP address in your router’s connected-device list or on the USB console.</li>
-    <li>Open that address in your browser and enter your permanent owner key.</li>
+    <li>Open <a id="wifi-local-link" hidden></a><span id="wifi-ip-fallback">the controller’s local address</span> and enter your permanent owner key.</li>
   </ol>
-  <p class="muted">Bookmark the dashboard after opening it. A DHCP reservation keeps the address stable.</p>
+  <details><summary>Dashboard address or Wi-Fi problems</summary>
+    <p>Give the controller a moment to join Wi-Fi. If the local name does not open, find <strong id="wifi-router-name">DISPATCH</strong> in your router’s connected-device list or read the address from the USB console after restarting the controller. Open the IP address with <code>http://</code>.</p>
+    <p>If the controller never joins, check for a 2.4 GHz network and the correct passphrase. Hold the front button during power-up, run USB pairing again, and re-enter Wi-Fi settings. Use your existing key file to keep the same owner key.</p>
+  </details>
 </section>
 <div id="dashboard" hidden>
   <div id="view-overview">
@@ -982,7 +986,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
     </section>
     <section><div class="section-head"><h3>Support report</h3><button id="review-support" type="button">Review report</button></div>
       <div id="support-preview" hidden>
-        <p class="muted">Review the captured readings and diagnostics before sharing. Credentials, network addresses, and device IDs are excluded.</p>
+        <p class="muted">Review this report before sharing. It includes timestamps, energy use, and operating history. Credentials, network addresses, and device IDs are excluded.</p>
         <pre id="support-text" tabindex="0"></pre>
         <button id="download-support" type="button">Download JSON</button>
       </div>
@@ -1373,6 +1377,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
         <button type="button" id="update-check" hidden>Check now</button>
         <button type="button" id="update-seen" hidden>Mark as read</button>
         <button class="primary" type="button" id="update-install" hidden>Install and restart</button>
+        <a id="update-notes" target="_blank" rel="noopener noreferrer" hidden>Release notes</a>
       </div>
       <p id="update-message" role="status"></p>
     </section>
@@ -1386,8 +1391,8 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
     </section>
     <section class="transfer" id="transfer-settings" hidden>
       <div class="section-head"><h3>Configuration transfer</h3></div>
-      <p class="muted">Export a backup or move a setup to another controller. Wi-Fi, owner keys, outlet passwords, and learned history stay on this controller.</p>
-      <div class="row"><button type="button" id="export-config">Export configuration</button><button type="button" id="choose-import">Choose file to import</button></div>
+      <p class="muted">The private backup contains equipment addresses and IDs, your operating plan, and any saved daylight coordinates. Use the Activity support report when sharing diagnostics.</p>
+      <div class="row"><button type="button" id="export-config">Export private backup</button><button type="button" id="choose-import">Choose file to import</button></div>
       <input id="import-file" type="file" accept=".json,application/json" hidden>
       <div id="import-preview" hidden>
         <h4>Review imported configuration</h4><div id="import-timeline"></div><div id="import-summary"></div>
@@ -1503,7 +1508,8 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
 const el = id => document.getElementById(id);
 const PRESET_MANUAL = 0, PRESET_SOLAR = 1, PRESET_EFFICIENCY = 2;
 const ownerKeyPattern = /^[a-f0-9]{32}$/;
-const ownerKeyStorage = 'dispatch.ownerKey';
+const ownerKeyStorage = 'dispatch.rememberedOwnerKey';
+try { localStorage.removeItem('dispatch.ownerKey'); } catch { /* Storage may be unavailable. */ }
 let key = '', state, busy = false, background = null;
 let lastStatusAt = 0, statusReadFailed = false, firstRunExpanded = false;
 const statusStaleAfter = 15000;
@@ -1530,6 +1536,16 @@ function forgetOwnerKey(value) {
   try {
     if (value && localStorage.getItem(ownerKeyStorage) === value) localStorage.removeItem(ownerKeyStorage);
   } catch { /* Storage may be unavailable. */ }
+}
+
+function fillWifiHandoff(hostname) {
+  const name = /^dispatch-[0-9a-f]{6}$/.test(hostname || '') ? hostname : '';
+  const link = el('wifi-local-link');
+  link.hidden = !name;
+  el('wifi-ip-fallback').hidden = !!name;
+  el('wifi-router-name').textContent = name || 'DISPATCH';
+  if (name) link.textContent = link.href = 'http://' + name + '.local/';
+  else link.removeAttribute('href');
 }
 function showLogin() {
   key = '';
@@ -3840,6 +3856,7 @@ function paint(next) {
   el('lock').hidden = false;
   el('connection-status').hidden = state.setup;
   if (state.setup) {
+    fillWifiHandoff(state.hostname);
     const form = el('wifi').elements;
     const owner = commissioning.get('owner');
     const ntp = commissioning.get('ntp');
@@ -4048,7 +4065,7 @@ async function change(path, values, messageId) {
     }
   } finally { busy = false; }
 }
-async function unlock(credential, remember = true) {
+async function unlock(credential, {remember = false, focus = true, submitted = false} = {}) {
   if (busy || background) return;
   busy = true;
   el('unlock').disabled = true;
@@ -4057,14 +4074,17 @@ async function unlock(credential, remember = true) {
   try {
     const next = await api('status');
     if (key !== credential) return;
-    if (remember && !next.setup && ownerKeyPattern.test(credential)) rememberOwnerKey(credential);
+    if (submitted && !next.setup && ownerKeyPattern.test(credential)) {
+      if (remember) rememberOwnerKey(credential);
+      else forgetOwnerKey(credential);
+    }
     paint(next);
     el('login').reset();
-    if (remember) focusDestination(next.setup ? el('setup-heading') : el('view-overview').querySelector('h2'), true);
+    if (focus) focusDestination(next.setup ? el('setup-heading') : el('view-overview').querySelector('h2'), true);
   } catch (error) {
     const rejected = !key;
     showLogin();
-    if (remember) {
+    if (focus) {
       if (rejected) el('owner-key').value = '';
       el('owner-key').focus();
     }
@@ -4077,8 +4097,8 @@ async function unlock(credential, remember = true) {
 }
 el('login').onsubmit = event => {
   event.preventDefault();
-  const credential = event.target.elements.key.value;
-  unlock(credential);
+  const fields = event.target.elements;
+  unlock(fields.key.value, {remember:fields.remember.checked, submitted:true});
 };
 el('lock').onclick = () => {
   forgetOwnerKey(key);
@@ -5286,16 +5306,21 @@ function renderNotifications() {
 function renderNetworkUpdate() {
   const update = state.networkUpdate || {};
   const ready = !update.phase;
+  const waitingForClock = !state.time?.synchronized;
   el('update-nav-dot').hidden = el('update-settings-dot').hidden = !update.unread;
   el('update-installed').textContent = update.installed ? 'Installed ' + update.installed : '';
   el('update-enable').hidden = !update.supported;
   el('update-enable').disabled = !ready;
   el('update-enable').textContent = update.enabled ? 'Turn off checks' : 'Enable checks';
   el('update-check').hidden = !update.enabled;
-  el('update-check').disabled = !ready;
+  el('update-check').disabled = !ready || waitingForClock;
   el('update-seen').hidden = !update.unread;
   el('update-install').hidden = !update.offered;
-  el('update-install').disabled = !ready;
+  el('update-install').disabled = !ready || waitingForClock;
+  const notes = el('update-notes');
+  notes.hidden = !update.github || !/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(update.offered || '');
+  if (!notes.hidden) notes.href = 'https://github.com/Spectre-Works/dispatch/releases/tag/' + update.offered;
+  else notes.removeAttribute('href');
   const progress = update.total ? Math.floor(100 * update.received / update.total) : 0;
   const phases = ['', 'Check queued.', 'Checking for releases…', 'Installation queued.',
     'Downloading ' + (update.offered || '') + ' · ' + progress + '%',
@@ -5305,8 +5330,10 @@ function renderNetworkUpdate() {
     'The release manifest failed verification.', 'The firmware image failed verification.',
     'The controller could not stage or activate the update.', 'The controller ran out of memory for the update.',
     'The previous update failed its trial boot. The controller restored the earlier firmware.'];
-  const message = !update.supported ? 'Network Update is unavailable in this build or on this partition layout.' :
-    !update.enabled ? 'Release checks are off.' : phases[update.phase] || results[update.result] || 'Ready to check.';
+  const message = !update.supported ? 'Use USB to update this build. Network Update requires an update-enabled build and the current partition layout.' :
+    !update.enabled ? 'Release checks are off.' : phases[update.phase] ||
+    (waitingForClock ? 'Waiting for the controller clock to synchronize. See Settings → Clock.' :
+      results[update.result] || 'Ready to check.');
   if (el('update-status').textContent !== message) el('update-status').textContent = message;
 }
 
@@ -5450,7 +5477,7 @@ if (scannedKey && /^(?:[0-9]{12}|[a-f0-9]{32})$/.test(scannedKey)) {
   unlock(scannedKey);
 } else {
   const remembered = storedOwnerKey();
-  if (ownerKeyPattern.test(remembered)) unlock(remembered, false);
+  if (ownerKeyPattern.test(remembered)) unlock(remembered, {focus:false});
 }
 setInterval(() => { if (state && !state.setup) refresh(); }, 4500);
 setInterval(renderConnection, 1000);

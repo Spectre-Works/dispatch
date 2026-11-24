@@ -138,6 +138,7 @@ void network_update_start(void)
     if (!mutex || !version_parts(status.installed, parts) || !compatible_layout() ||
         nvs_open("dispatch_ota", NVS_READWRITE, &nvs) != ESP_OK) return;
     status.supported = true;
+    status.github = !strcmp(release_base, "https://github.com/Spectre-Works/dispatch/releases");
     uint8_t enabled = 0;
     if (nvs_get_u8(nvs, "enabled", &enabled) == ESP_OK) status.enabled = enabled == 1;
     size_t size = sizeof(seen);

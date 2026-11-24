@@ -14,6 +14,7 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_netif_sntp.h"
+#include "mdns.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
@@ -24,6 +25,8 @@ enum { NETWORK_VERSION = 2, PAIR_SECONDS = 600, BUTTON = GPIO_NUM_41,
 _Static_assert(sizeof(network_settings) == 200, "Network settings v1/v2 blob layout");
 static const char *const tag = "dispatch";
 static const char *const fallback_ntp[] = {"time.cloudflare.com", "time.nist.gov"};
+static char hostname[sizeof("dispatch-000000")];
+static atomic_bool mdns_ready;
 static network_settings saved;
 static nvs_handle_t nvs;
 static atomic_bool online;
@@ -94,6 +97,16 @@ bool network_setup_active(void)
 bool network_online(void)
 {
     return atomic_load(&online);
+}
+
+const char *network_hostname(void)
+{
+    return hostname;
+}
+
+bool network_mdns_ready(void)
+{
+    return mdns_ready;
 }
 
 uint32_t network_epoch(void)
@@ -191,6 +204,7 @@ static void network_event(void *arg, esp_event_base_t base, int32_t event, void 
         const ip_event_got_ip_t *ip = data;
         atomic_store(&online, true);
         ESP_LOGI(tag, "Local web interface at http://" IPSTR "/", IP2STR(&ip->ip_info.ip));
+        if (mdns_ready) ESP_LOGI(tag, "Local name http://%s.local/", hostname);
         atomic_store(&time_retry, true);
     }
 }
@@ -200,6 +214,8 @@ static void wifi_begin(wifi_mode_t mode, wifi_config_t *config)
     esp_netif_t *netif = mode == WIFI_MODE_AP
         ? esp_netif_create_default_wifi_ap() : esp_netif_create_default_wifi_sta();
     ESP_ERROR_CHECK(netif ? ESP_OK : ESP_ERR_NO_MEM);
+    if (mode == WIFI_MODE_STA && esp_netif_set_hostname(netif, hostname) != ESP_OK)
+        ESP_LOGW(tag, "Could not set DHCP hostname");
     esp_log_level_set("wifi", ESP_LOG_WARN);
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&init));
@@ -232,6 +248,9 @@ void network_start(void)
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, network_event, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, network_event, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_LOST_IP, network_event, NULL));
+    uint8_t mac[6];
+    ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
+    snprintf(hostname, sizeof(hostname), "dispatch-%02x%02x%02x", mac[3], mac[4], mac[5]);
 
     if (pairing_allowed) {
         usb_serial_jtag_driver_config_t usb = {.tx_buffer_size = 512, .rx_buffer_size = 256};
@@ -259,6 +278,11 @@ void network_start(void)
         if (!time_service) ESP_LOGW(tag, "Could not initialize NTP");
     }
     wifi_begin(WIFI_MODE_STA, &config);
+    if (mdns_init() == ESP_OK) {
+        mdns_ready = mdns_hostname_set(hostname) == ESP_OK;
+        if (!mdns_ready) mdns_free();
+    }
+    if (!mdns_ready) ESP_LOGW(tag, "Local name and equipment discovery unavailable");
     explicit_bzero(&config, sizeof(config));
 }
 

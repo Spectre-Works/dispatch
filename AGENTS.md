@@ -22,12 +22,10 @@ control timing with the browser open and after Wi-Fi reconnects. Report any
 hardware measurements still pending.
 
 For each approved firmware batch, build and run the relevant checks across
-the full batch, then flash the connected DISPATCH development controller
-over USB before handing it back. Use intermediate flashes when a hardware
-result blocks the batch. The maintainer has authorized these routine
-updates. Identify the board by its stable USB path, use
-`app-flash` for the existing partition layout to preserve NVS settings,
-and verify the updated firmware boots and serves the browser interface.
+the full batch and verify the firmware on the development controller where
+hardware and deployment authorization are available. Identify the board by
+its stable USB path, use `app-flash` when the existing layout and active slot
+allow it, and verify the firmware boots and serves the dashboard.
 Report any deployment or verification blocker. See the
 [build and flash instructions](docs/development.md#build-and-flash).
 

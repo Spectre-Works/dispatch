@@ -2,18 +2,19 @@
 
 # SPECTRE WORKS DISPATCH
 
+DISPATCH/01 is a source-available developer preview.
+
 DISPATCH manages miners on your local network. Set the hours and electricity
 budget, pair each miner with a metered outlet, and review what the controller
 would do before enabling it. Once enabled, DISPATCH/01 keeps operating when
 the browser closes.
 
-## Use DISPATCH/01
+## Get to Preview
 
-With a provisioned controller, open its LAN address and unlock the dashboard.
-Under **Settings → Pair equipment**, associate the miner with its outlet.
-Confirm the physical mapping in **Equipment**, then edit the **Operating
-plan** and review the proposed actions in **Outlet Preview**.
-[Operator guide](docs/operations.md) · [First USB and Wi-Fi setup](docs/development.md#provision-the-controller)
+Start with an AtomS3-Lite, a USB data cable, a trusted 2.4 GHz LAN, and one
+compatible metered outlet and miner. Follow the quickstart to build and
+flash the firmware, join Wi-Fi, and see what DISPATCH would do in Preview.
+[Get to Preview](START-HERE.md#get-to-preview) · [Already set up?](docs/operations.md)
 
 - **Plan mining around power and cost.** Combine allowed mining hours, Quiet
   Hours, paid starts, and daylight gap coverage under one plan. Use solar

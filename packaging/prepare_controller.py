@@ -11,10 +11,12 @@ import os
 from pathlib import Path
 import re
 import shutil
+import ssl
 import subprocess
 import tarfile
 import tempfile
 import tomllib
+from prepare_network_update import RELEASE_VERSION, manifest as sign_ota_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE_PATHS = {
@@ -24,6 +26,8 @@ IMAGE_PATHS = {
     "0x20000": "dispatch01.bin",
 }
 LINKED_MEMBERS = re.compile(r"^\s*0x([0-9a-f]+)\s+0x([0-9a-f]+)\s+(\S+?\.a)\(([^\n]+?)\)", re.M)
+GITHUB_RELEASES = "https://github.com/Spectre-Works/dispatch/releases"
+CERTIFICATE = r"-----BEGIN CERTIFICATE-----\r?\n[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE-----"
 
 
 def command(*args):
@@ -97,7 +101,48 @@ def collect_notices(scope, source, sdk, toolchain, controller, bundle, scope_fil
         destination.write_text(notice.rstrip() + "\n")
 
 
-def prepare(revision, output):
+def prepare_ota_trust(bundle, ca, signing_key):
+    pem = ca.read_text(encoding="ascii")
+    if not re.fullmatch(rf"(?:\s*{CERTIFICATE}\s*)+", pem):
+        raise ValueError("The OTA CA file must contain only PEM certificates")
+    ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT).load_verify_locations(cadata=pem)
+    ca_path = bundle / "trust/ota-ca.pem"
+    signer_path = bundle / "trust/ota-signer-public.pem"
+    ca_path.parent.mkdir()
+    ca_path.write_text(pem, encoding="ascii")
+    signer_path.write_bytes(subprocess.check_output(["openssl", "pkey", "-in", signing_key, "-pubout"]))
+    return ca_path, signer_path
+
+
+def prepare_ota_assets(bundle, build, trust, signing_key, release_base):
+    image_path = bundle / "firmware/dispatch01.bin"
+    image = image_path.read_bytes()
+    ca, signer = trust
+    if any(path.read_bytes().rstrip(b"\n") not in image for path in trust):
+        raise ValueError("The release image does not embed the supplied OTA trust inputs")
+    config = (bundle / "sdkconfig").read_text()
+    if "CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y\n" not in config:
+        raise ValueError("The release bootloader must support rollback")
+    ota = bundle / "ota"
+    ota.mkdir()
+    shutil.copyfile(image_path, ota / "dispatch01.bin")
+    signed = sign_ota_manifest(image_path, signing_key)
+    payload, signature, _ = signed.rsplit(b"\n", 2)
+    signature_file = build / "ota-signature.der"
+    signature_file.write_bytes(bytes.fromhex(signature.decode("ascii")))
+    subprocess.run(
+        ["openssl", "dgst", "-sha256", "-verify", signer, "-signature", signature_file],
+        input=payload + b"\n", stdout=subprocess.DEVNULL, check=True,
+    )
+    (ota / "dispatch01-ota-v1.txt").write_bytes(signed)
+    return {
+        "release_base": release_base, "image": "ota/dispatch01.bin",
+        "manifest": "ota/dispatch01-ota-v1.txt",
+        "ca_sha256": digest(ca), "signing_public_key_sha256": digest(signer),
+    }
+
+
+def prepare(revision, output, release_version=None, ota_ca=None, signing_key=None, release_base=GITHUB_RELEASES):
     if output.exists():
         raise ValueError("Choose a new output directory")
     idf_path = os.environ.get("IDF_PATH")
@@ -134,12 +179,16 @@ def prepare(revision, output):
 
         controller = source / "apps/controller"
         lock_digest = digest(controller / "dependencies.lock")
-        version = sha[:12]
+        version = release_version or sha[:12]
         env = dict(os.environ, SOURCE_DATE_EPOCH=epoch)
-        subprocess.run(
-            ["idf.py", "-C", controller, "-B", build, f"-DPROJECT_VER={version}", "build"],
-            env=env, check=True,
-        )
+        flags = [f"-DPROJECT_VER={version}"]
+        if release_version:
+            trust = prepare_ota_trust(bundle, ota_ca, signing_key)
+            ca, signer = trust
+            flags.extend([f"-DDISPATCH_OTA_CA={ca}", f"-DDISPATCH_OTA_SIGNER={signer}",
+                          f"-DDISPATCH_OTA_RELEASE_BASE={release_base}",
+                          "-DDISPATCH_LINK_TEST=OFF", "-DDISPATCH_OTA_TRIAL_FAIL=OFF"])
+        subprocess.run(["idf.py", "-C", controller, "-B", build, *flags, "build"], env=env, check=True)
         description = json.loads((build / "project_description.json").read_text())
         expected = {"project_name": "dispatch01", "target": "esp32s3", "project_version": version}
         if any(description[key] != value for key, value in expected.items()):
@@ -163,6 +212,10 @@ def prepare(revision, output):
             destination = bundle / "firmware" / path
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(build / path, destination)
+        (bundle / "firmware/flash_args").write_text(
+            " ".join(flash["write_flash_args"]) + "\n" +
+            "".join(f"{offset} {path}\n" for offset, path in IMAGE_PATHS.items())
+        )
         shutil.copyfile(controller / "sdkconfig", bundle / "sdkconfig")
         collect_notices(scope, source, sdk, compiler.parent.parent, controller, bundle, scope_file)
 
@@ -178,6 +231,8 @@ def prepare(revision, output):
             "linked_archives_by_image": inventory,
             "flash": {"settings": flash["flash_settings"], "files": IMAGE_PATHS},
         }
+        if release_version:
+            manifest["network_update"] = prepare_ota_assets(bundle, build, trust, signing_key, release_base)
         (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         checksums = (f"{digest(path)}  {path.relative_to(bundle)}\n" for path in sorted(bundle.rglob("*")) if path.is_file())
         (bundle / "SHA256SUMS").write_text("".join(checksums))
@@ -190,9 +245,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path, help="New local directory for the package")
     parser.add_argument("--revision", default="HEAD", help="Git commit or ref to build")
+    parser.add_argument("--release-version", help="Build USB and signed OTA assets for this vMAJOR.MINOR.PATCH")
+    parser.add_argument("--ota-ca", type=Path, help="PEM trust roots for the release and download hosts")
+    parser.add_argument("--signing-key", type=Path, help="Private ECDSA P-256 release signing key")
+    parser.add_argument("--ota-release-base", help="Override the GitHub release base for a bench rehearsal")
     args = parser.parse_args()
+    requested = (args.release_version, args.ota_ca, args.signing_key)
+    if (any(requested) or args.ota_release_base) and not all(requested):
+        parser.error("Supply --release-version, --ota-ca, and --signing-key together")
+    if args.release_version and not RELEASE_VERSION.fullmatch(args.release_version):
+        parser.error("Use vMAJOR.MINOR.PATCH with up to six digits per component")
     try:
-        prepare(args.revision, args.output.absolute())
+        prepare(args.revision, args.output.absolute(), args.release_version,
+                args.ota_ca, args.signing_key, args.ota_release_base or GITHUB_RELEASES)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
         parser.exit(1, f"Controller packaging failed: {exc}\n")
     print(f"Controller package ready at {args.output}")
