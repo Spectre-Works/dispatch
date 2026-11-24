@@ -4,7 +4,7 @@
 # DISPATCH configuration transfer
 
 The browser produces a JSON object with `format` set to
-`dispatch-configuration` and `version` set to `3`. The document contains
+`dispatch-configuration` and `version` set to `4`. The document contains
 the saved operating plan and the equipment needed to run it. Keep
 it private if the equipment addresses and IDs identify your network.
 
@@ -17,7 +17,7 @@ it private if the equipment addresses and IDs identify your network.
 | `rateWindows` | Two objects with boolean `enabled` and integer `start`, `end`, and `rate` in the same units |
 | `weekend` | Use `{"enabled":false}` for a daily plan. With `enabled` true, include `start`, `end`, `quiet`, and `rateWindows` with the same meanings for Saturday and Sunday |
 | `operating` | Boolean `paidEnabled`, local minute pairs `paidStart` and `paidEnd` and `weekendPaidStart` and `weekendPaidEnd`, plus the `gap` object below |
-| `equipment` | Four objects ordered by integer `slot` (0–3), each with string `ip`, `identity`, and optional cgminer address `minerIp`. Use empty strings for unused values |
+| `equipment` | Eight objects ordered by integer `slot` (0–7), each with string `ip`, `identity`, and optional cgminer address `minerIp`. Use empty strings for unused values |
 
 An enabled paid window with equal start and end times covers the whole day
 within allowed mining hours. The `gap` object carries a boolean `enabled`
@@ -27,7 +27,8 @@ decimal places.
 
 In **Settings → Configuration transfer**, choose **Export configuration**
 to save a file or **Choose file to import** to review one. **Apply in
-Preview** replaces all four slots and the plan together. A
+Preview** replaces all eight slots and the plan together. Version 3 exports are also
+accepted and populate slots 0–3, leaving slots 4–7 empty. A
 matching outlet ID and address in the same slot can retain its locally stored
 password. Configure Home Assistant and MQTT endpoints and credentials under
 **Settings → Connections**. Reapply per-outlet meter mappings under

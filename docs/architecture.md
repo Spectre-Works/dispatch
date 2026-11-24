@@ -35,15 +35,19 @@ Installation worker (apps/controller/main/installation.c)
 
 ## From readings to actions
 
-The worker polls one external endpoint at a time. Adapters report
+The worker polls one external endpoint at a time. It services due grid reads
+and relay changes between equipment requests. Outlet and miner polls have
+independent schedules and back off per endpoint. Adapters report
 measurements, freshness, capabilities, and outcomes from the equipment.
 The worker assembles inputs and runs the portable policy engine. The same
 engine evaluates Preview and active control. A proposed action, a request
 sent to equipment, and a confirmed observation are distinct states.
 
 DISPATCH keeps settings, budget progress, and learned evidence locally.
-Activity stores recent intervals and events in a bounded flash ring. Missing
-measurements appear as gaps. Keeping the policy independent of the SDK makes
+The operations journal commits one consistent snapshot of policy and accounting
+state at a time. It appends changed blocks and rotates across four-sector groups.
+Activity rotates five-minute, 15-minute and hourly records and timestamped
+events across separate flash rings. Missing measurements appear as gaps. Keeping the policy independent of the SDK makes
 its behavior testable without hardware.
 [Operating plan rules](operating-policy.md) · [Host checks](development.md#checks-and-simulation)
 

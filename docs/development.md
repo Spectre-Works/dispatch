@@ -59,6 +59,19 @@ slot is reserved.
 | Routine firmware update | `idf.py -C apps/controller -p "$dispatch_port" app-flash` |
 | Inspect boot over USB | `idf.py -C apps/controller -p "$dispatch_port" monitor` |
 
+For the migration from the four-slot map to the eight-slot map, check that
+the running application is in the first slot. Build the new application and
+write only the partition table and first application over USB. The table
+keeps both application offsets, NVS and the previous history offset. First
+boot imports installation settings and reads the earlier Activity records.
+
+```sh
+idf.py -C apps/controller build
+python -m esptool --chip esp32s3 --port "$dispatch_port" write-flash \
+  0x8000 apps/controller/build/partition_table/partition-table.bin \
+  0x20000 apps/controller/build/dispatch01.bin
+```
+
 Some serial monitors reset the controller on open. For an active installation,
 use the LAN dashboard and status sampler to verify the build booted, retained
 its expected settings, and continued to receive fresh readings.

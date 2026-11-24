@@ -67,7 +67,7 @@ The dashboard uses one operating plan. Saving is atomic and opens Preview.
 The browser evaluates example decisions before saving and shows live outlet
 decisions in Preview afterward.
 
-Configuration version 3 carries the schedule, tariffs, allowance, and paid
+Configuration version 4 carries the schedule, tariffs, allowance, and paid
 permissions, including the coordinates used for daylight coverage when
 supplied. Set up integrations and authorize miners on the destination
 installation. The firmware reads the current installation format.

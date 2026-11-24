@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
 # SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
 idf_component_register(
-    SRCS controller.c network.c installation.c dispatch_timezone.c discovery.c web.c timeline.c notifications.c preset_credentials.c profile_store.c ../../../integrations/integration_profile.c ../../../core/dispatch_policy.c ../../../core/dispatch_evidence.c ../../../integrations/json_record.c ../../../integrations/local_tcp.c ../../../integrations/local_http.c
+    SRCS controller.c network.c installation.c dispatch_timezone.c discovery.c web.c timeline.c operations_store.c notifications.c preset_credentials.c profile_store.c ../../../integrations/integration_profile.c ../../../core/dispatch_policy.c ../../../core/dispatch_evidence.c ../../../integrations/json_record.c ../../../integrations/local_tcp.c ../../../integrations/local_http.c
          ../../../integrations/switches/shelly.c ../../../integrations/switches/shelly_http.c ../../../integrations/miners/cgminer.c ../../../integrations/miners/goldshell_mode.c ../../../integrations/mining-services/mining_path.c
          ../../../integrations/home_assistant.c ../../../integrations/switches/tasmota.c ../../../integrations/switches/outlet.c
          ../../../integrations/mqtt_wire.c ../../../integrations/switches/tasmota_mqtt.c

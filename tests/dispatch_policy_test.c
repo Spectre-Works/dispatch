@@ -10,20 +10,28 @@ static void schedules_and_pauses(void)
 {
     dispatch_inputs in = {
         .operating = {.paid_enabled = true},
-        .solar = {.load_known = true, .start_watts = {100, 100, 100, 100}},
-        .outlet = {
-            {true, true, false, 10}, {true, true, false, 10},
-            {true, true, false, 10}, {true, true, false, 10},
-        },
+        .solar = {.load_known = true},
         .policy = {22 * 60, 7 * 60, 12000, 10000},
         .now = 180, .minute = 23 * 60, .clock_valid = true, .accounting_valid = true,
     };
+    for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
+        in.outlet[i] = (dispatch_outlet){true, true, false, 10};
+        in.solar.start_watts[i] = 100;
+    }
     dispatch_decision out[DISPATCH_LIMIT];
     dispatch_plan(&in, out);
     assert(out[0].action == DISPATCH_ON && out[0].reason == DISPATCH_PAID_START);
     for (unsigned i = 1; i < DISPATCH_LIMIT; ++i) {
         assert(out[i].action == DISPATCH_KEEP && out[i].reason == DISPATCH_START_PENDING);
     }
+    in.priority[7] = 2;
+    dispatch_plan(&in, out);
+    assert(out[7].action == DISPATCH_ON && out[0].reason == DISPATCH_START_PENDING);
+    in.manual_hold_mask = 1u << 7;
+    dispatch_plan(&in, out);
+    assert(out[7].reason == DISPATCH_MANUAL_HOLD && out[0].action == DISPATCH_ON);
+    in.priority[7] = 0;
+    in.manual_hold_mask = 0;
     in.minute = 0;
     in.outlet[0].on = true;
     dispatch_plan(&in, out);

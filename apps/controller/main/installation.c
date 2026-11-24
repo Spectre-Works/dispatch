@@ -8,9 +8,11 @@
 #include "network.h"
 #include "preset_credentials.h"
 #include "timeline.h"
+#include "operations_store.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -20,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { INSTALLATION_VERSION = 29, HOME_METER_VERSION = 28, PREVIOUS_VERSION = 27, POLL_SECONDS = 5, CHECKPOINT_SECONDS = 300,
+enum { INSTALLATION_VERSION = 30, LEGACY_VERSION = 29, HOME_METER_VERSION = 28, PREVIOUS_VERSION = 27, POLL_SECONDS = 5, CHECKPOINT_SECONDS = 300,
        RETRY_SECONDS = 15, RETRY_LIMIT = 2, WORKER_STACK = 8192, PROFILE_SECONDS = 30, PATH_POLL_SECONDS = 30,
        DESTINATION_POLL_SECONDS = 30, PATH_FRESH_SECONDS = 95, IDENTITY_SECONDS = 300,
        STALL_SECONDS = 600, RECOVERY_OFF_SECONDS = 120,
@@ -50,6 +52,74 @@ typedef struct {
     bool active, restoring, canceled;
 } preset_evaluation;
 
+// The v27–29 NVS representation has four slots, independent of the active limit.
+enum { LEGACY_SLOTS = 4 };
+typedef struct {
+    dispatch_policy policy;
+    int16_t utc_offset_minutes;
+    association device[LEGACY_SLOTS];
+} legacy_settings;
+typedef struct {
+    dispatch_meter_anchor anchor[LEGACY_SLOTS];
+    uint64_t used_nano_cents;
+    uint32_t day;
+    uint8_t gap_mask;
+} legacy_budget;
+typedef struct {
+    uint16_t reserve, shed_margin, start_watts[LEGACY_SLOTS];
+    uint8_t reserved;
+    uint16_t restart_seconds, shed_delay_seconds;
+} legacy_follow;
+typedef struct {
+    uint32_t day;
+    dispatch_preset_totals device[LEGACY_SLOTS];
+} legacy_preset_day;
+typedef struct {
+    uint32_t version;
+    legacy_settings settings;
+    legacy_budget budget;
+    uint64_t pause_until;
+    uint32_t pause_unclocked;
+    uint8_t hold_mask, hold_on;
+    bool enabled;
+    uint8_t attempt_counts;
+    _Alignas(uint64_t) char timezone[TIMEZONE_NAME_BYTES];
+    dispatch_quiet_hours quiet;
+    _Alignas(uint64_t) dispatch_tariff tariff;
+    uint32_t highest_rate_day;
+    dispatch_profile profile[LEGACY_SLOTS];
+    dispatch_daily_evidence days[DISPATCH_EVIDENCE_DAYS];
+    slot_coordination coordination[LEGACY_SLOTS];
+    mining_settings mining;
+    _Alignas(uint64_t) bool budget_date_pending;
+    _Alignas(uint64_t) solar_settings solar;
+    grid_settings grid;
+    _Alignas(uint64_t) uint8_t first_run[LEGACY_SLOTS];
+    bool pause_indefinite;
+    _Alignas(uint64_t) legacy_follow follow;
+    _Alignas(uint64_t) solar_daily_evidence solar_days[DISPATCH_EVIDENCE_DAYS];
+    _Alignas(uint64_t) bool plan_ready;
+    _Alignas(uint64_t) dispatch_efficiency efficiency[LEGACY_SLOTS];
+    char equipment_name[LEGACY_SLOTS][EQUIPMENT_NAME_BYTES];
+    _Alignas(uint64_t) dispatch_weekend_plan weekend;
+    _Alignas(uint64_t) notification_target notifications;
+    _Alignas(uint64_t) miner_preset_evidence presets[LEGACY_SLOTS];
+    legacy_preset_day preset_days[DISPATCH_EVIDENCE_DAYS];
+    _Alignas(uint64_t) uint8_t reserved_preset, preset_authorized, pinned_preset[LEGACY_SLOTS];
+    _Alignas(uint64_t) preset_evaluation evaluation;
+    _Alignas(uint64_t) daylight_settings daylight;
+    uint64_t bridge_started;
+    _Alignas(uint64_t) dispatch_power_test_result power_test[LEGACY_SLOTS];
+    uint8_t test_armed;
+    _Alignas(uint64_t) uint8_t reserved_policy;
+    _Alignas(uint64_t) dispatch_operating_plan operating;
+    uint8_t preset_choice[LEGACY_SLOTS];
+    _Alignas(uint64_t) home_settings home;
+    mqtt_endpoint mqtt;
+    home_meter_mapping home_meter[LEGACY_SLOTS];
+    uint64_t profile_revision, grid_profile_revision;
+} legacy_installation;
+
 typedef struct {
     uint32_t version;
     installation_settings settings;
@@ -58,7 +128,7 @@ typedef struct {
     uint32_t pause_unclocked;
     uint8_t hold_mask, hold_on;
     bool enabled;
-    uint8_t attempt_counts;
+    uint16_t attempt_counts;
     _Alignas(uint64_t) char timezone[TIMEZONE_NAME_BYTES];
     dispatch_quiet_hours quiet;
     _Alignas(uint64_t) dispatch_tariff tariff;
@@ -100,9 +170,9 @@ _Static_assert(sizeof(grid_settings) == 136 && offsetof(grid_settings, direction
                "Native grid settings reuse reserved bytes");
 // These offsets define the current installation record. Reserved bytes keep that
 // record stable when a stored option is retired.
-_Static_assert(offsetof(installation_store, first_run) == 1816, "Installation equipment layout");
-_Static_assert(offsetof(installation_store, home) == 0xef8, "Version 27 record size");
-_Static_assert(offsetof(installation_store, solar_days) == 1848, "Installation solar layout");
+_Static_assert(offsetof(legacy_installation, first_run) == 1816, "Installation equipment layout");
+_Static_assert(offsetof(legacy_installation, home) == 0xef8, "Version 27 record size");
+_Static_assert(offsetof(legacy_installation, solar_days) == 1848, "Installation solar layout");
 static const solar_settings default_solar = {.port = 8899, .night_start = 20 * 60, .night_end = 5 * 60};
 static const grid_settings default_grid = {.reserve = 150};
 static const follow_settings default_follow = {
@@ -113,7 +183,9 @@ static const dispatch_quiet_hours default_quiet = {.start_minute = 22 * 60, .end
 
 typedef struct {
     device_view view;
-    uint32_t since, solar_off_since, startup_at, next_command, next_probe, connection_epoch, observation_day, next_profile;
+    uint32_t since, solar_off_since, startup_at, next_command, connection_epoch, observation_day, next_profile;
+    uint32_t next_probe, next_miner;
+    uint8_t outlet_failures, miner_failures;
     bool startup_tracking;
     uint32_t zero_since, next_destination, destination_at, recovery_requested_at;
     dispatch_work_monitor work;
@@ -289,18 +361,22 @@ static bool telemetry_advance(time_t utc)
             telemetry.solar_watts / telemetry.solar_count / 10 : TIMELINE_UNKNOWN_WATTS;
         sample->grid_decawatts = telemetry.grid_count ?
             telemetry.grid_watts / telemetry.grid_count / 10 : TIMELINE_UNKNOWN_GRID;
+        sample->solar_count = telemetry.solar_count;
+        sample->grid_count = telemetry.grid_count;
         for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
             timeline_miner *miner = &sample->miner[i];
             miner->watts = telemetry.samples[i] ? telemetry.watts[i] / telemetry.samples[i] : TIMELINE_UNKNOWN_WATTS;
-            const uint64_t cost = (telemetry.cost[i] + 5000000) / 10000000;
-            miner->cost_centicents = cost > UINT16_MAX ? UINT16_MAX : cost;
+            const uint64_t cost = telemetry.cost[i] / 1000000;
+            miner->cost_millicents = cost > UINT32_MAX ? UINT32_MAX : cost;
+            miner->observations = telemetry.samples[i];
         }
         timeline_sample_write(telemetry.bucket, sample);
     }
+    timeline_complete(bucket);
     const bool partial = !telemetry.bucket || bucket > telemetry.bucket + 1;
     memset(&telemetry, 0, sizeof(telemetry));
     telemetry.bucket = bucket;
-    telemetry.sample.flags = TIMELINE_SAMPLE_TAG | (partial && utc % TIMELINE_SECONDS > 10 ? TIMELINE_PARTIAL : 0);
+    telemetry.sample.flags = partial && utc % TIMELINE_SECONDS > 10 ? TIMELINE_PARTIAL : 0;
     return true;
 }
 
@@ -309,7 +385,11 @@ static timeline_miner *telemetry_miner(unsigned slot)
     timeline_miner *miner = &telemetry.sample.miner[slot];
     const uint16_t identity = installation_equipment_identity(&state.settings.device[slot]);
     if (miner->identity != identity) {
-        if (miner->identity) telemetry.sample.flags |= TIMELINE_PARTIAL;
+        if (miner->identity) {
+            telemetry.sample.flags |= TIMELINE_PARTIAL;
+            telemetry.sample.replaced_mwh += miner->paid_mwh;
+            telemetry.sample.replaced_millicents += telemetry.cost[slot] / 1000000;
+        }
         *miner = (timeline_miner){.identity = identity};
         telemetry.cost[slot] = telemetry.watts[slot] = telemetry.samples[slot] = 0;
     }
@@ -518,10 +598,7 @@ const char *installation_event(event_kind kind)
 
 static esp_err_t save(void)
 {
-    esp_err_t result = nvs_set_blob(nvs, "state", &state, sizeof(state));
-    if (result == ESP_OK) {
-        result = nvs_commit(nvs);
-    }
+    const esp_err_t result = operations_save(&state);
     if (result != ESP_OK && !storage_error) {
         record(DISPATCH_LIMIT, EVENT_STORAGE_ERROR);
     }
@@ -1312,7 +1389,7 @@ esp_err_t installation_control(bool enable)
     }
     bool previous = state.enabled;
     uint8_t previous_hold = state.hold_mask, previous_hold_on = state.hold_on;
-    uint8_t previous_attempts = state.attempt_counts;
+    uint16_t previous_attempts = state.attempt_counts;
     state.enabled = enable;
     if (!enable) {
         state.hold_mask = 0;
@@ -1349,7 +1426,7 @@ esp_err_t installation_pause(unsigned seconds, bool indefinite)
     const uint32_t previous_unclocked = state.pause_unclocked;
     const bool previous_indefinite = state.pause_indefinite;
     const uint8_t previous_hold = state.hold_mask, previous_hold_on = state.hold_on;
-    const uint8_t previous_attempts = state.attempt_counts;
+    const uint16_t previous_attempts = state.attempt_counts;
     if (requested) {
         state.hold_mask &= ~state.hold_on;
         for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
@@ -2064,9 +2141,57 @@ static void stop_power_test(power_test_phase outcome, const char *detail)
     power_test.detail = detail;
 }
 
-static bool test_power_allowed(void)
+// Only the worker performs relay RPCs. Release the settings lock during
+// network I/O so status and owner requests can run while a relay is slow.
+static uint32_t relay_revision, relay_epoch;
+
+static bool relay_current(void)
 {
-    return admit_on() && state.enabled && !storage_error;
+    lock();
+    const bool current = relay_revision == generation && relay_epoch == network_epoch() && network_online();
+    unlock();
+    return current;
+}
+
+static bool relay_may_start(void)
+{
+    lock();
+    const bool allowed = relay_revision == generation && relay_epoch == network_epoch() &&
+        admit_on() && state.enabled && !storage_error && !paused_at(network_clock());
+    unlock();
+    return allowed;
+}
+
+static shelly_result send_relay(unsigned slot, bool on, uint16_t timed, bool *current)
+{
+    shelly_target target = state.settings.device[slot].shelly;
+    ha_endpoint ha = {0};
+    mqtt_endpoint *mqtt = NULL;
+    const outlet_kind kind = outlet_identity(target.identity);
+    if (kind == OUTLET_HA) ha = state.home.endpoint;
+    if (kind == OUTLET_MQTT) {
+        mqtt = malloc(sizeof(*mqtt));
+        if (!mqtt) {
+            explicit_bzero(&target, sizeof(target));
+            *current = true;
+            return SHELLY_NETWORK;
+        }
+        *mqtt = state.mqtt;
+    }
+    relay_revision = generation;
+    relay_epoch = network_epoch();
+    unlock();
+    const shelly_result result = timed ? outlet_timed_on(&target, timed, relay_may_start) :
+        outlet_set(&target, &ha, mqtt, on, on ? relay_may_start : relay_current);
+    explicit_bzero(&target, sizeof(target));
+    explicit_bzero(&ha, sizeof(ha));
+    if (mqtt) {
+        explicit_bzero(mqtt, sizeof(*mqtt));
+        free(mqtt);
+    }
+    lock();
+    *current = relay_revision == generation && relay_epoch == network_epoch();
+    return result;
 }
 
 esp_err_t installation_power_test(unsigned slot, uint16_t identity, bool start, const char **conflict)
@@ -2148,7 +2273,9 @@ static void power_test_tick(uint32_t now)
         power_test.started = now;
         power_test.lease = now + POWER_TEST_SECONDS;
         power_test.phase = POWER_TEST_STARTING;
-        const shelly_result result = outlet_timed_on(&state.settings.device[slot].shelly, POWER_TEST_SECONDS, test_power_allowed);
+        bool current;
+        const shelly_result result = send_relay(slot, true, POWER_TEST_SECONDS, &current);
+        if (!current) return;
         if (result == SHELLY_DEFERRED) {
             // The read-only preflight or pause check stopped the ON request.
             state.test_armed = 0;
@@ -2170,7 +2297,9 @@ static void power_test_tick(uint32_t now)
             if (now >= power_test.next_save) finish_power_test(now);
         } else if (network_online() && now >= power_test.retry_off) {
             if (in.outlet[slot].fresh) power_test.last_read = device->view.outlet_time;
-            const shelly_result result = outlet_set(&state.settings.device[slot].shelly, &state.home.endpoint, &state.mqtt, false, network_online);
+            bool current;
+            const shelly_result result = send_relay(slot, false, 0, &current);
+            if (!current) return;
             power_test.retry_off = network_uptime() + RETRY_SECONDS;
             next_energy_change = network_uptime() + GRID_SETTLE;
             device->next_probe = 0;
@@ -2230,7 +2359,7 @@ static void power_test_tick(uint32_t now)
     const cgminer_sample *miner = &device->view.miner;
     const unsigned warmup = miner_api ? TEST_HASH_WARMUP : TEST_METER_WARMUP;
     const bool operating = now - power_test.started >= warmup &&
-        (!miner_api || (device->view.miner_time == device->view.outlet_time &&
+        (!miner_api || (device->view.miner_polled && now - device->view.miner_time <= POLL_SECONDS &&
          miner->responding && miner->activity_known && miner->rate_window_seconds && miner->mhs > 0));
     power_test.phase = operating ? POWER_TEST_MEASURING : POWER_TEST_WARMING;
     const unsigned seconds = miner_api ? TEST_HASH_STABLE : TEST_METER_STABLE;
@@ -2262,19 +2391,15 @@ static void telemetry_tick(uint32_t now)
     if (local_time(utc, &day, NULL)) telemetry_budget(day);
     if (bridge_active) telemetry.sample.flags |= TIMELINE_BRIDGE;
     else telemetry.sample.flags &= ~TIMELINE_BRIDGE;
-    const uint16_t productive_bits = (TIMELINE_PRODUCTIVE << DISPATCH_LIMIT) - TIMELINE_PRODUCTIVE;
-    telemetry.sample.flags = (telemetry.sample.flags & ~productive_bits) | (in.productive_mask * TIMELINE_PRODUCTIVE);
+    telemetry.sample.productive = in.productive_mask;
     if (solar_reply_fresh(now)) {
         const uint32_t max_watts = (UINT16_MAX - 1) * 10U;
-        telemetry.solar_watts += solar.reading.watts > max_watts ? max_watts : solar.reading.watts;
+        const uint32_t watts = solar.reading.watts > max_watts ? max_watts : solar.reading.watts;
+        const uint16_t decawatts = watts / 10;
+        if (!telemetry.solar_count || decawatts < telemetry.sample.solar_min) telemetry.sample.solar_min = decawatts;
+        if (!telemetry.solar_count || decawatts > telemetry.sample.solar_max) telemetry.sample.solar_max = decawatts;
+        telemetry.solar_watts += watts;
         ++telemetry.solar_count;
-        telemetry.observed = true;
-    }
-    if (grid_fresh(now)) {
-        const int32_t max_watts = INT16_MAX * 10;
-        const int32_t watts = grid.watts;
-        telemetry.grid_watts += watts > max_watts ? max_watts : watts < -max_watts ? -max_watts : watts;
-        ++telemetry.grid_count;
         telemetry.observed = true;
     }
     for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
@@ -2286,10 +2411,6 @@ static void telemetry_tick(uint32_t now)
         if (!state.enabled || storage_error) status |= TIMELINE_PREVIEW;
         if (outlet->fresh) {
             status |= outlet->on ? TIMELINE_OUTLET_ON : TIMELINE_OUTLET_OFF;
-            if (device->view.outlet.power_known) {
-                telemetry.watts[i] += (uint32_t)device->view.outlet.watts;
-                ++telemetry.samples[i];
-            }
             if (outlet->on && device->view.power_mode.status == GOLDSHELL_MODE_READY &&
                 device->power_checked && now - device->power_checked <= MODE_FRESH_SECONDS &&
                 device->power_probe_epoch == network_epoch()) status |= device->view.power_mode.mode;
@@ -2784,14 +2905,14 @@ static void observe_preset(unsigned slot, uint32_t now, uint32_t day, bool quali
 }
 
 static void observation(unsigned index, shelly_result result, const shelly_sample *outlet,
-                        const cgminer_sample *miner, uint32_t now)
+                        const cgminer_sample *miner, bool outlet_update, uint32_t now)
 {
     device_runtime *d = &runtime[index];
     device_view *v = &d->view;
     const bool recent = v->observed && d->connection_epoch == network_epoch() &&
         now - v->outlet_time <= OBSERVATION_TTL;
     bool was_fresh = fresh(d, now);
-    if (!was_fresh || result != SHELLY_OK || !outlet->on) {
+    if (outlet_update && (!was_fresh || result != SHELLY_OK || !outlet->on)) {
         d->power_checked = 0;
         d->next_power_probe = 0;
     }
@@ -2804,7 +2925,7 @@ static void observation(unsigned index, shelly_result result, const shelly_sampl
         d->next_power_probe = 0;
     }
     const bool work_paused = miner_work_paused(index, now);
-    const bool lost_outlet = v->observed && v->outlet_result == SHELLY_OK &&
+    const bool lost_outlet = outlet_update && v->observed && v->outlet_result == SHELLY_OK &&
         (result != SHELLY_OK || !was_fresh);
     const bool lost_miner = miner && !work_paused && result == SHELLY_OK && was_fresh && v->outlet.on && outlet->on &&
         v->miner_polled && v->miner.responding && !miner->responding;
@@ -2814,8 +2935,8 @@ static void observation(unsigned index, shelly_result result, const shelly_sampl
     else reset_solar_credit();
     if (day && (result == SHELLY_OK || lost_outlet || lost_miner)) {
         dispatch_daily_evidence *summary = day_evidence(day);
-        if (result == SHELLY_OK && outlet->energy_known) account(index, outlet, utc, summary);
-        if (result == SHELLY_OK && was_fresh && outlet->on && v->outlet.on && d->observation_day == day) {
+        if (outlet_update && result == SHELLY_OK && outlet->energy_known) account(index, outlet, utc, summary);
+        if (outlet_update && result == SHELLY_OK && was_fresh && outlet->on && v->outlet.on && d->observation_day == day) {
             summary->powered_seconds += now - v->outlet_time;
             dirty = true;
         }
@@ -2824,7 +2945,7 @@ static void observation(unsigned index, shelly_result result, const shelly_sampl
             dirty = true;
         }
     }
-    d->observation_day = day;
+    if (outlet_update) d->observation_day = day;
     if (d->connection_epoch != network_epoch()) {
         d->destination = DESTINATION_UNKNOWN;
         d->next_destination = 0;
@@ -2832,19 +2953,21 @@ static void observation(unsigned index, shelly_result result, const shelly_sampl
     const bool zero = miner && !work_paused && result == SHELLY_OK && outlet->on &&
         miner->activity_known && miner->rate_window_seconds && miner->mhs == 0;
     const path_status datum = zero ? datum_status(now) : PATH_WAITING;
-    if (!zero || !state.coordination[index].recovery || node_status(now) != PATH_READY ||
-        (datum != PATH_READY && datum != PATH_SOLO) || destination_at(index, now) != DESTINATION_MATCH) {
-        d->zero_since = 0;
-    } else if (!d->zero_since || !was_fresh || !v->outlet.on || now - v->miner_time > OBSERVATION_TTL) {
-        d->zero_since = now ? now : 1;
+    if (miner || result != SHELLY_OK || !outlet->on) {
+        if (!zero || !state.coordination[index].recovery || node_status(now) != PATH_READY ||
+            (datum != PATH_READY && datum != PATH_SOLO) || destination_at(index, now) != DESTINATION_MATCH) {
+            d->zero_since = 0;
+        } else if (!d->zero_since || !was_fresh || now - v->miner_time > OBSERVATION_TTL) {
+            d->zero_since = now ? now : 1;
+        }
     }
-    d->connection_epoch = network_epoch();
-    if (result == SHELLY_OK) {
+    if (outlet_update) d->connection_epoch = network_epoch();
+    if (outlet_update && result == SHELLY_OK) {
         const bool changed = v->observed && outlet->on != v->outlet.on;
         // A recovered reading of an already off outlet is not a new stop.
         if (outlet->on) d->solar_off_since = 0;
         else if (changed) d->solar_off_since = now;
-        if (outlet->on) observe_first_run(index, miner);
+        if (outlet->on && (!v->outlet.on || !was_fresh)) d->next_miner = 0;
         if (!recent || changed) {
             d->since = now;
             d->startup_tracking = was_fresh && outlet->on;
@@ -2869,27 +2992,37 @@ static void observation(unsigned index, shelly_result result, const shelly_sampl
                 d->recovery_requested_at = 0;
             }
         }
+        if (outlet->power_known && telemetry_advance(utc)) {
+            timeline_miner *sample = telemetry_miner(index);
+            const uint16_t watts = outlet->watts >= UINT16_MAX ? UINT16_MAX - 1 : outlet->watts;
+            if (!telemetry.samples[index] || watts < sample->minimum) sample->minimum = watts;
+            if (!telemetry.samples[index] || watts > sample->maximum) sample->maximum = watts;
+            telemetry.watts[index] += watts;
+            ++telemetry.samples[index];
+            telemetry.observed = true;
+        }
         v->outlet = *outlet;
         v->observed = true;
         v->outlet_time = now;
-    } else {
+    } else if (outlet_update) {
         if (was_fresh) {
             record(index, EVENT_OUTLET_LOST);
         }
         d->startup_tracking = false;
     }
-    v->outlet_result = result;
+    if (outlet_update) v->outlet_result = result;
     if (miner && (!v->miner_polled || v->miner.responding != miner->responding) && (miner->responding || !work_paused)) {
         record(index, miner->responding ? EVENT_MINER_RESPONDING : EVENT_MINER_LOST);
     }
     if (miner) {
+        if (result == SHELLY_OK && outlet->on) observe_first_run(index, miner);
         v->miner = *miner;
         v->miner_polled = true;
         v->miner_time = now;
     }
     const bool testing = testing_outlet(index);
     const bool measured = !testing && hashing && result == SHELLY_OK && was_fresh && outlet->on && outlet->power_known;
-    observe_preset(index, now, day, measured, measured ? outlet->watts : 0, measured ? miner->mhs : 0);
+    if (miner || lost_outlet || (outlet_update && !outlet->on)) observe_preset(index, now, day, measured, measured ? outlet->watts : 0, measured ? miner->mhs : 0);
     if (!testing && hashing && result == SHELLY_OK && outlet->on) {
         dispatch_profile *profile = &state.profile[index];
         if (d->startup_tracking) {
@@ -2914,44 +3047,45 @@ static bool admit_on(void)
     return network_online() && !atomic_load(&pause_requested);
 }
 
-static void try_command(unsigned i, uint32_t now)
+static bool try_command(unsigned i, uint32_t now, dispatch_action desired,
+                        const dispatch_inputs *in, dispatch_decision decision)
 {
     if (!state.enabled || storage_error || !network_online()) {
-        return;
+        return false;
     }
     const time_t utc = network_clock();
-    dispatch_inputs in = inputs(now, utc);
-    dispatch_decision decisions[DISPATCH_LIMIT];
-    decide(&in, decisions, utc);
-    const dispatch_action action = decisions[i].action;
+    const dispatch_action action = decision.action;
     device_runtime *d = &runtime[i];
     if (action == DISPATCH_ON && power_job.pending &&
-        power_job.desired != GOLDSHELL_MODE_UNKNOWN) return;
+        power_job.desired != GOLDSHELL_MODE_UNKNOWN) return false;
     if (now < solar_preset_shed_until &&
-        in.solar.fresh && in.solar.load_known &&
-        (decisions[i].reason == DISPATCH_SOLAR_STOP || decisions[i].reason == DISPATCH_PAID_START)) return;
-    if (action == DISPATCH_KEEP || (action == DISPATCH_ON && !admit_on())) {
-        return;
+        in->solar.fresh && in->solar.load_known &&
+        (decision.reason == DISPATCH_SOLAR_STOP || decision.reason == DISPATCH_PAID_START)) return false;
+    if (action != desired || (action == DISPATCH_ON && !admit_on())) {
+        return false;
     }
-    if (decisions[i].reason == DISPATCH_RECOVERY) {
+    if (decision.reason == DISPATCH_RECOVERY) {
         uint32_t day;
-        if (d->pending != DISPATCH_KEEP || !local_time(utc, &day, NULL)) return;
+        if (d->pending != DISPATCH_KEEP || !local_time(utc, &day, NULL)) return false;
         slot_coordination previous = state.coordination[i];
         state.coordination[i].recovery_day = day;
         state.coordination[i].recovery_until = utc + RECOVERY_OFF_SECONDS;
         if (save() != ESP_OK) {
             state.coordination[i] = previous;
             dirty = true;
-            return;
+            return false;
         }
         d->zero_since = 0;
         record_action(i, EVENT_RECOVERY_ATTEMPT, DISPATCH_OFF, DISPATCH_RECOVERY);
         d->recovery_requested_at = now;
-        const shelly_result result = outlet_set(&state.settings.device[i].shelly, &state.home.endpoint, &state.mqtt, false, network_online);
+        bool current;
+        const shelly_result result = send_relay(i, false, 0, &current);
+        if (!current) return true;
+        d->next_probe = 0;
         next_energy_change = network_uptime() + GRID_SETTLE;
         record_action(i, result == SHELLY_OK ? EVENT_RECOVERY_ACK : EVENT_RECOVERY_ERROR,
                       DISPATCH_OFF, EVENT_NO_REASON);
-        return;
+        return true;
     }
     if (d->pending != action) {
         d->pending = action;
@@ -2959,21 +3093,22 @@ static void try_command(unsigned i, uint32_t now)
         d->next_command = now;
     }
     if (now < d->next_command) {
-        return;
+        return false;
     }
     if (d->tries >= RETRY_LIMIT) {
         state.hold_mask |= 1u << i;
         if (action == DISPATCH_ON) {
             state.hold_on |= 1u << i;
         }
-        record_action(i, EVENT_COMMAND_HOLD, action, decisions[i].reason);
+        record_action(i, EVENT_COMMAND_HOLD, action, decision.reason);
         save();
-        return;
+        return false;
     }
 
     // Commit the attempt before the RPC. A power loss cannot reset the retry
     // allowance between an accepted command and its observed confirmation.
-    const uint8_t previous_attempts = state.attempt_counts, previous_on = state.hold_on;
+    const uint16_t previous_attempts = state.attempt_counts;
+    const uint8_t previous_on = state.hold_on;
     state.attempt_counts = (state.attempt_counts & ~(3u << (2 * i))) | ((d->tries + 1) << (2 * i));
     if (action == DISPATCH_ON) {
         state.hold_on |= 1u << i;
@@ -2984,17 +3119,19 @@ static void try_command(unsigned i, uint32_t now)
         state.attempt_counts = previous_attempts;
         state.hold_on = previous_on;
         dirty = true;
-        return;
+        return false;
     }
     // The adapter checks for a queued pause again after the read-only preflight.
-    shelly_result result = outlet_set(&state.settings.device[i].shelly, &state.home.endpoint, &state.mqtt, action == DISPATCH_ON,
-                                     action == DISPATCH_ON ? admit_on : network_online);
+    bool current;
+    const shelly_result result = send_relay(i, action == DISPATCH_ON, 0, &current);
+    if (!current || !state.enabled) return true;
     if (result == SHELLY_DEFERRED) {
         state.attempt_counts = previous_attempts;
         state.hold_on = previous_on;
         dirty = true;
-        return;
+        return false;
     }
+    d->next_probe = 0;
     ++d->tries;
     d->next_command = network_uptime() + RETRY_SECONDS;
     next_energy_change = network_uptime() + GRID_SETTLE;
@@ -3003,7 +3140,8 @@ static void try_command(unsigned i, uint32_t now)
     }
     record_action(i, result != SHELLY_OK ? EVENT_COMMAND_ERROR :
                   action == DISPATCH_ON ? EVENT_COMMAND_ON : EVENT_COMMAND_OFF,
-                  action, decisions[i].reason);
+                  action, decision.reason);
+    return true;
 }
 
 static bool gx_allowed(void)
@@ -3217,6 +3355,20 @@ static void expire_pause(time_t utc)
     }
 }
 
+static void log_grid_power(int32_t reading)
+{
+    if (telemetry_advance(network_clock())) {
+        const int32_t max_watts = INT16_MAX * 10;
+        const int32_t watts = reading > max_watts ? max_watts : reading < -max_watts ? -max_watts : reading;
+        const int16_t decawatts = watts / 10;
+        if (!telemetry.grid_count || decawatts < telemetry.sample.grid_min) telemetry.sample.grid_min = decawatts;
+        if (!telemetry.grid_count || decawatts > telemetry.sample.grid_max) telemetry.sample.grid_max = decawatts;
+        telemetry.grid_watts += watts;
+        ++telemetry.grid_count;
+        telemetry.observed = true;
+    }
+}
+
 static void grid_tick(void)
 {
     const uint32_t now = network_uptime(), epoch = network_epoch();
@@ -3284,6 +3436,7 @@ static void grid_tick(void)
             if (watts <= 0) grid.covered_at = finished;
             grid.at = finished;
             grid.sampled = true;
+            log_grid_power(watts);
         }
     }
     unlock();
@@ -4278,10 +4431,105 @@ static bool deliver_notification(uint32_t now, uint32_t boot)
     return true;
 }
 
+static uint32_t probe_clock(void)
+{
+    return esp_timer_get_time() / 1000;
+}
+
+static uint32_t retry_delay(uint8_t *failures, bool healthy, uint32_t normal)
+{
+    if (healthy) {
+        *failures = 0;
+        return normal;
+    }
+    if (*failures < 3) ++*failures;
+    return normal << *failures;
+}
+
+static bool poll_equipment(bool miner)
+{
+    lock();
+    if (!network_online()) {
+        unlock();
+        return false;
+    }
+    const uint32_t now = probe_clock();
+    unsigned slot = DISPATCH_LIMIT;
+    uint32_t oldest = 0;
+    for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
+        const association *device = &state.settings.device[i];
+        const device_runtime *d = &runtime[i];
+        const uint32_t due = miner ? d->next_miner : d->next_probe;
+        if (!device->shelly.ip[0] || (miner && (!device->miner_ip[0] || !fresh(d, network_uptime()) ||
+            (!d->view.outlet.on && d->view.miner_polled))) || (due && (int32_t)(now - due) < 0)) continue;
+        if (slot == DISPATCH_LIMIT || (!due && oldest) ||
+            (due && oldest && (int32_t)(due - oldest) < 0)) {
+            slot = i;
+            oldest = due;
+        }
+    }
+    if (slot == DISPATCH_LIMIT) {
+        unlock();
+        return false;
+    }
+    association target = state.settings.device[slot];
+    const uint32_t revision = generation, connection = network_epoch();
+    ha_endpoint ha = {0};
+    home_meter_mapping meter = {0};
+    mqtt_endpoint *mqtt = NULL;
+    const outlet_kind kind = outlet_identity(target.shelly.identity);
+    if (!miner && kind == OUTLET_HA) {
+        ha = state.home.endpoint;
+        meter = state.home_meter[slot];
+    }
+    if (!miner && kind == OUTLET_MQTT) {
+        mqtt = malloc(sizeof(*mqtt));
+        if (mqtt) *mqtt = state.mqtt;
+    }
+    unlock();
+
+    cgminer_sample stats = {0};
+    shelly_sample outlet = {0};
+    shelly_result result = SHELLY_NETWORK;
+    if (miner) stats = cgminer_summary(target.miner_ip);
+    else if (kind == OUTLET_HA && !strcmp(ha.ip, target.shelly.ip))
+        result = ha_mapped_switch_status(&ha, target.shelly.identity, meter.power, meter.energy, &outlet);
+    else if (kind != OUTLET_MQTT || mqtt)
+        result = outlet_status(&target.shelly, &ha, mqtt, &outlet);
+    if (mqtt) {
+        explicit_bzero(mqtt, sizeof(*mqtt));
+        free(mqtt);
+    }
+    explicit_bzero(&ha, sizeof(ha));
+    explicit_bzero(&target, sizeof(target));
+
+    lock();
+    if (revision == generation && connection == network_epoch() && network_online()) {
+        const uint32_t finished = network_uptime();
+        device_runtime *d = &runtime[slot];
+        if (miner) {
+            const bool current = fresh(d, finished);
+            observation(slot, current ? SHELLY_OK : SHELLY_NETWORK, &d->view.outlet, &stats, false, finished);
+            const uint32_t interval = testing_outlet(slot) || d->startup_tracking ? 5000 : 15000;
+            const uint32_t backoff = retry_delay(&d->miner_failures, stats.responding, 5000);
+            d->next_miner = probe_clock() + (stats.responding ? interval : backoff);
+        } else {
+            observation(slot, result, &outlet, NULL, true, finished);
+            const uint32_t interval = retry_delay(&d->outlet_failures, result == SHELLY_OK, POLL_SECONDS * 1000);
+            d->next_probe = result == SHELLY_OK ? now + interval :
+                probe_clock() + (result == SHELLY_AUTH ? 60000 : interval);
+        }
+    }
+    unlock();
+    return true;
+}
+
 static void worker(void *arg)
 {
     uint32_t next_log = 0, next_work_check = 0, next_notification = 0, next_detection = 0, next_telemetry = 0;
     const uint32_t boot = esp_random();
+    uint32_t poll_epoch = UINT32_MAX;
+    unsigned background = 0;
     for (;;) {
         const uint32_t now = network_uptime();
         lock();
@@ -4293,50 +4541,20 @@ static void worker(void *arg)
         }
         unlock();
 
-        for (unsigned i = 0; i < DISPATCH_LIMIT && network_online(); ++i) {
+        const uint32_t epoch = network_epoch();
+        if (epoch != poll_epoch && network_online()) {
+            poll_epoch = epoch;
             lock();
-            association target = state.settings.device[i];
-            uint32_t revision = generation;
-            uint32_t connection = network_epoch();
-            bool poll = target.shelly.ip[0] && network_uptime() >= runtime[i].next_probe;
-            ha_endpoint ha = {0};
-            const outlet_kind kind = outlet_identity(target.shelly.identity);
-            home_meter_mapping meter;
-            if (poll && kind == OUTLET_HA) {
-                ha = state.home.endpoint;
-                meter = state.home_meter[i];
-            }
-            mqtt_endpoint *mqtt = NULL;
-            if (poll && kind == OUTLET_MQTT) {
-                mqtt = malloc(sizeof(*mqtt));
-                if (mqtt) *mqtt = state.mqtt;
+            unsigned paired = 0;
+            for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) paired += state.settings.device[i].shelly.ip[0] != 0;
+            unsigned order = 0;
+            for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
+                if (!state.settings.device[i].shelly.ip[0]) continue;
+                runtime[i].next_probe = probe_clock() + order++ * (5000 / paired);
+                runtime[i].next_miner = 0;
+                runtime[i].outlet_failures = runtime[i].miner_failures = 0;
             }
             unlock();
-            if (poll) {
-                shelly_sample outlet;
-                shelly_result result;
-                if (kind == OUTLET_HA && !strcmp(ha.ip, target.shelly.ip)) {
-                    result = ha_mapped_switch_status(&ha, target.shelly.identity, meter.power, meter.energy, &outlet);
-                } else {
-                    result = kind == OUTLET_MQTT && !mqtt ? SHELLY_NETWORK :
-                        outlet_status(&target.shelly, &ha, mqtt, &outlet);
-                }
-                const bool poll_miner = target.miner_ip[0];
-                cgminer_sample miner = poll_miner ? cgminer_summary(target.miner_ip) : (cgminer_sample){0};
-                lock();
-                if (revision == generation && network_online() && connection == network_epoch()) {
-                    observation(i, result, &outlet, poll_miner ? &miner : NULL, network_uptime());
-                    runtime[i].next_probe = network_uptime() +
-                        (result == SHELLY_AUTH ? 60 : kind == OUTLET_MQTT && result != SHELLY_OK ? 15 : POLL_SECONDS);
-                }
-                unlock();
-            }
-            if (mqtt) {
-                explicit_bzero(mqtt, sizeof(*mqtt));
-                free(mqtt);
-            }
-            explicit_bzero(&ha, sizeof(ha));
-            explicit_bzero(&target, sizeof(target));
         }
         grid_tick();
         lock();
@@ -4345,8 +4563,17 @@ static void worker(void *arg)
         power_test_tick(network_uptime());
         if (power_test.phase == POWER_TEST_STOPPING && !power_test.retry_off) power_test_tick(network_uptime());
         consider_preset_job(network_uptime());
-        for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
-            try_command(i, network_uptime());
+        bool commanded = false;
+        if (state.enabled && network_online() && !storage_error) {
+            const uint32_t due = network_uptime();
+            const time_t clock = network_clock();
+            const dispatch_inputs in = inputs(due, clock);
+            dispatch_decision decisions[DISPATCH_LIMIT];
+            decide(&in, decisions, clock);
+            for (unsigned i = 0; i < DISPATCH_LIMIT && !commanded; ++i)
+                commanded = try_command(i, due, DISPATCH_OFF, &in, decisions[i]);
+            for (unsigned i = 0; i < DISPATCH_LIMIT && !commanded; ++i)
+                commanded = try_command(i, due, DISPATCH_ON, &in, decisions[i]);
         }
         const uint32_t checked_at = network_uptime();
         if (checked_at >= next_work_check) {
@@ -4354,10 +4581,6 @@ static void worker(void *arg)
             next_work_check = checked_at + POLL_SECONDS;
         }
         unlock();
-        solar_tick();
-        gx_tick();
-        home_tick();
-        mqtt_probe_tick();
         lock();
         const uint32_t telemetry_at = network_uptime();
         if (telemetry_at >= next_telemetry) {
@@ -4366,15 +4589,26 @@ static void worker(void *arg)
         }
         timeline_flush_events();
         unlock();
-        if (!restart_tick() && !work_power_mode() && !mining_tick()) {
-            const uint32_t now = network_uptime();
-            if (now >= next_detection && detect_power_mode()) next_detection = now + 15;
-            else discovery_tick();
-        }
-        const uint32_t delivery_at = network_uptime();
-        if ((int32_t)(delivery_at - next_notification) >= 0) {
-            const bool attempted = deliver_notification(delivery_at, boot);
-            next_notification = network_uptime() + (attempted ? POLL_SECONDS : 1);
+        if (!commanded && !poll_equipment(false) && !poll_equipment(true)) {
+            switch (background++ % 8) {
+                case 0: solar_tick(); break;
+                case 1: gx_tick(); break;
+                case 2: home_tick(); break;
+                case 3: mqtt_probe_tick(); break;
+                case 4: if (!restart_tick()) work_power_mode(); break;
+                case 5: mining_tick(); break;
+                case 6:
+                    if (network_uptime() >= next_detection && detect_power_mode())
+                        next_detection = network_uptime() + 15;
+                    else discovery_tick();
+                    break;
+                case 7:
+                    if (network_uptime() >= next_notification) {
+                        const bool attempted = deliver_notification(network_uptime(), boot);
+                        next_notification = network_uptime() + (attempted ? POLL_SECONDS : 1);
+                    }
+                    break;
+            }
         }
         lock();
         worker_stack = uxTaskGetStackHighWaterMark(NULL);
@@ -4389,8 +4623,82 @@ static void worker(void *arg)
                      (unsigned long)worker_stack);
             next_log = now + 30;
         }
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
+}
+
+static void migrate_legacy(void)
+{
+    legacy_installation *old = calloc(1, sizeof(*old));
+    if (!old) return;
+    size_t size = sizeof(*old);
+    if (nvs_get_blob(nvs, "state", old, &size) != ESP_OK || !old->operating.current_format ||
+        !((old->version == LEGACY_VERSION && size == sizeof(*old)) ||
+          (old->version == HOME_METER_VERSION && size == offsetof(legacy_installation, profile_revision)) ||
+          (old->version == PREVIOUS_VERSION && size == offsetof(legacy_installation, home)))) goto done;
+
+    memcpy(&state.pause_until, &old->pause_until, sizeof(old->pause_until));
+    memcpy(&state.pause_unclocked, &old->pause_unclocked, sizeof(old->pause_unclocked));
+    memcpy(&state.hold_mask, &old->hold_mask, sizeof(old->hold_mask));
+    memcpy(&state.hold_on, &old->hold_on, sizeof(old->hold_on));
+    memcpy(&state.enabled, &old->enabled, sizeof(old->enabled));
+    memcpy(&state.timezone, &old->timezone, sizeof(old->timezone));
+    memcpy(&state.quiet, &old->quiet, sizeof(old->quiet));
+    memcpy(&state.tariff, &old->tariff, sizeof(old->tariff));
+    memcpy(&state.highest_rate_day, &old->highest_rate_day, sizeof(old->highest_rate_day));
+    memcpy(&state.profile, &old->profile, sizeof(old->profile));
+    memcpy(&state.days, &old->days, sizeof(old->days));
+    memcpy(&state.coordination, &old->coordination, sizeof(old->coordination));
+    memcpy(&state.mining, &old->mining, sizeof(old->mining));
+    memcpy(&state.budget_date_pending, &old->budget_date_pending, sizeof(old->budget_date_pending));
+    memcpy(&state.solar, &old->solar, sizeof(old->solar));
+    memcpy(&state.grid, &old->grid, sizeof(old->grid));
+    memcpy(&state.first_run, &old->first_run, sizeof(old->first_run));
+    memcpy(&state.pause_indefinite, &old->pause_indefinite, sizeof(old->pause_indefinite));
+    memcpy(&state.solar_days, &old->solar_days, sizeof(old->solar_days));
+    memcpy(&state.plan_ready, &old->plan_ready, sizeof(old->plan_ready));
+    memcpy(&state.efficiency, &old->efficiency, sizeof(old->efficiency));
+    memcpy(&state.equipment_name, &old->equipment_name, sizeof(old->equipment_name));
+    memcpy(&state.weekend, &old->weekend, sizeof(old->weekend));
+    memcpy(&state.notifications, &old->notifications, sizeof(old->notifications));
+    memcpy(&state.presets, &old->presets, sizeof(old->presets));
+    memcpy(&state.reserved_preset, &old->reserved_preset, sizeof(old->reserved_preset));
+    memcpy(&state.preset_authorized, &old->preset_authorized, sizeof(old->preset_authorized));
+    memcpy(&state.pinned_preset, &old->pinned_preset, sizeof(old->pinned_preset));
+    memcpy(&state.evaluation, &old->evaluation, sizeof(old->evaluation));
+    memcpy(&state.daylight, &old->daylight, sizeof(old->daylight));
+    memcpy(&state.bridge_started, &old->bridge_started, sizeof(old->bridge_started));
+    memcpy(&state.power_test, &old->power_test, sizeof(old->power_test));
+    memcpy(&state.test_armed, &old->test_armed, sizeof(old->test_armed));
+    memcpy(&state.reserved_policy, &old->reserved_policy, sizeof(old->reserved_policy));
+    memcpy(&state.operating, &old->operating, sizeof(old->operating));
+    memcpy(&state.preset_choice, &old->preset_choice, sizeof(old->preset_choice));
+    memcpy(&state.home, &old->home, sizeof(old->home));
+    memcpy(&state.mqtt, &old->mqtt, sizeof(old->mqtt));
+    memcpy(&state.home_meter, &old->home_meter, sizeof(old->home_meter));
+    memcpy(&state.profile_revision, &old->profile_revision, sizeof(old->profile_revision));
+    memcpy(&state.grid_profile_revision, &old->grid_profile_revision, sizeof(old->grid_profile_revision));
+
+    state.attempt_counts = old->attempt_counts;
+    state.settings.policy = old->settings.policy;
+    state.settings.utc_offset_minutes = old->settings.utc_offset_minutes;
+    memcpy(state.settings.device, old->settings.device, sizeof(old->settings.device));
+    memcpy(state.budget.anchor, old->budget.anchor, sizeof(old->budget.anchor));
+    state.budget.used_nano_cents = old->budget.used_nano_cents;
+    state.budget.day = old->budget.day;
+    state.budget.gap_mask = old->budget.gap_mask;
+    state.follow.reserve = old->follow.reserve;
+    state.follow.shed_margin = old->follow.shed_margin;
+    memcpy(state.follow.start_watts, old->follow.start_watts, sizeof(old->follow.start_watts));
+    state.follow.restart_seconds = old->follow.restart_seconds;
+    state.follow.shed_delay_seconds = old->follow.shed_delay_seconds;
+    for (unsigned i = 0; i < DISPATCH_EVIDENCE_DAYS; ++i) {
+        state.preset_days[i].day = old->preset_days[i].day;
+        memcpy(state.preset_days[i].device, old->preset_days[i].device, sizeof(old->preset_days[i].device));
+    }
+done:
+    explicit_bzero(old, sizeof(*old));
+    free(old);
 }
 
 void installation_start(void)
@@ -4398,26 +4706,23 @@ void installation_start(void)
     timeline_start();
     ESP_ERROR_CHECK(nvs_open("dispatch_op", NVS_READWRITE, &nvs));
     preset_credentials_start(nvs);
-    size_t size = sizeof(state);
-    const esp_err_t loaded = nvs_get_blob(nvs, "state", &state, &size);
-    const bool upgrading = loaded == ESP_OK &&
-        ((size == offsetof(installation_store, home) && state.version == PREVIOUS_VERSION) ||
-         (size == offsetof(installation_store, profile_revision) && state.version == HOME_METER_VERSION));
-    if (upgrading) state.version = INSTALLATION_VERSION;
-    if (loaded != ESP_OK || (!upgrading && size != sizeof(state)) || state.version != INSTALLATION_VERSION ||
-        !state.operating.current_format) {
-        state = (installation_store){
-            .version = INSTALLATION_VERSION,
-            .settings.policy.rate_millicents_per_kwh = 12000,
-            .quiet = default_quiet,
-            .solar = default_solar,
-            .grid = default_grid,
-            .follow = default_follow,
-            .operating.current_format = true,
-        };
-        for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) state.coordination[i].priority = 1;
+    state = (installation_store){
+        .version = INSTALLATION_VERSION,
+        .settings.policy.rate_millicents_per_kwh = 12000,
+        .quiet = default_quiet,
+        .solar = default_solar,
+        .grid = default_grid,
+        .follow = default_follow,
+        .operating.current_format = true,
+    };
+    for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) state.coordination[i].priority = 1;
+    if (!operations_load(&state, sizeof(state))) {
+        migrate_legacy();
+        if (save() != ESP_OK) {
+            dirty = true;
+            ESP_LOGE("dispatch", "Could not initialize the operations journal");
+        }
     }
-    dirty = upgrading;
     const uint64_t revision = operating_profile_revision();
     const uint64_t grid_revision = grid_profile_revision(state.grid.target.identity);
     if (state.profile_revision != revision || state.grid_profile_revision != grid_revision) {

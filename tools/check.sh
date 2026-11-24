@@ -51,6 +51,8 @@ run_test integration-profile -std=c11 -Iintegrations \
     tests/integration_profile_test.c integrations/integration_profile.c integrations/json_record.c
 run_test profile-store -std=gnu11 -Itests/fixtures/profiles -Iapps/controller/main -Iintegrations \
     tests/profile_store_test.c apps/controller/main/profile_store.c integrations/integration_profile.c integrations/json_record.c
+run_test controller-storage -std=gnu11 -Icore -Iapps/controller/main -Itests/fixtures/flash -Itests/fixtures/profiles \
+    tests/controller_storage_test.c apps/controller/main/timeline.c apps/controller/main/operations_store.c
 run_test evidence -std=c11 -Icore \
     tests/dispatch_evidence_test.c core/dispatch_evidence.c
 run_test daylight -std=c11 -Icore \

@@ -110,11 +110,17 @@ readings, and current operating state. [Miner capability details](../integration
 | An unavailable or stale reading | Use **Needs attention** and **What happens next** on Overview. Check live readings in **Energy**, source configuration in **Settings → Energy sources**, and the miner in **Equipment**. Check **Settings → Clock** if local time is unavailable. |
 | A miner powered on without observed work | Check the miner API and **Mining path**. Optional XBT node and DATUM observations provide upstream evidence. Set priorities, temporary holds, and optional recovery in **Equipment → Coordination**. |
 
-Activity keeps up to 48 hours of five-minute records and up to seven days of
-daily evidence. The interval details show which paid permissions were seen
-during the interval when fresh metered evidence is available.
+Pair up to eight miners. The equipment list shows paired units, and the
+pairing form offers an empty slot when one is available.
 
-Use **Settings → Transfer** to export or review a version 3
+Activity keeps up to 48 hours of five-minute readings, seven days of
+15-minute summaries, and 30 days of hourly summaries. Summaries preserve
+average, minimum and maximum power, reading counts, energy and estimated
+cost. Select an interval to inspect finer history when it is still available.
+Daily evidence remains available for seven days. Relay and preset changes
+are stored with original timestamps in a separate event log.
+
+Use **Settings → Transfer** to export version 4 or review a version 3 or 4
 configuration. Import applies the plan and all equipment slots together and
 opens Preview. Use the **Activity** support report for sharing diagnostics.
 [Transfer contents and privacy](configuration-transfer.md)

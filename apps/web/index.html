@@ -927,7 +927,9 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
           <button type="button" data-activity-range="today" aria-pressed="false">Today</button>
           <button type="button" data-activity-range="yesterday" aria-pressed="false">Yesterday</button>
           <button type="button" data-activity-range="retained" aria-pressed="false">Last 48h</button>
-          <button type="button" data-activity-range="week" aria-pressed="false">7 days</button>
+          <button type="button" data-activity-range="week-detail" aria-pressed="false">7 days</button>
+          <button type="button" data-activity-range="month" aria-pressed="false">30 days</button>
+          <button type="button" data-activity-range="week" aria-pressed="false">Daily totals</button>
         </div>
         <div class="activity-options">
           <label class="activity-equipment" id="activity-equipment">Equipment
@@ -954,6 +956,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
           <button type="button" class="subtle" id="activity-drill" hidden>Inspect five-minute history</button></div>
         <div class="activity-miners" id="activity-miners"></div>
         <ol class="activity-events" id="activity-events"></ol>
+        <button type="button" id="activity-more-events" hidden>Load older events</button>
       </div>
       </div>
       <p class="muted activity-note" id="activity-status" role="status"></p>
@@ -1013,7 +1016,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
         <ul id="discovery-results"></ul>
       </fieldset>
       <div class="grid">
-        <label>Association<select name="index"><option value="0">Miner 1</option><option value="1">Miner 2</option><option value="2">Miner 3</option><option value="3">Miner 4</option></select></label>
+        <label>Association<select name="index"></select></label>
         <label>Outlet IPv4 address<input name="ip" maxlength="15" placeholder="192.168.1.20"></label>
         <label>Device ID or switch entity<input name="identity" maxlength="39" placeholder="shellyplusplugsus-…, switch.miner" aria-describedby="identity-help"><small id="identity-help">Use the Shelly ID with @channel for a secondary output, tasmota- followed by the 12-digit lowercase MAC and @relay, a switch entity from Home Assistant, or mqtt- followed by the lowercase MAC, a dash, and the saved Tasmota topic.</small></label>
         <label>Outlet credential<input name="password" type="password" maxlength="64"></label>
@@ -2098,13 +2101,23 @@ function inspectEquipment(slot) {
   if (heading) focusDestination(heading);
 }
 
+function syncAssociationOptions() {
+  const select = el('config').elements.index;
+  const selected = select.value;
+  const free = selected && !state.devices[Number(selected)]?.ip ? Number(selected) :
+    state.devices.findIndex(d => !d.ip);
+  const options = state.devices.flatMap((d, i) => d.ip ? [[String(i), deviceLabel(i)]] : []);
+  if (free >= 0) options.push([String(free), 'Add miner · Slot ' + (free + 1)]);
+  if (options.length === select.options.length &&
+      options.every(([value, label], i) => select.options[i].value === value && select.options[i].text === label)) return;
+  select.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
+  if (options.some(([value]) => value === selected)) select.value = selected;
+}
+
 function renderEquipment() {
   const devicePanel = el('devices');
   const installed = state.devices.flatMap((d, i) => d.ip ? [{d, i}] : []);
-  for (const option of el('config').elements.index.options) {
-    const label = deviceLabel(Number(option.value));
-    if (option.textContent !== label) option.textContent = label;
-  }
+  syncAssociationOptions();
   const comparable = installed.filter(({d}) => !d.presetEfficiency && d.efficiency > 0 && d.efficiencySamples >= 3)
     .sort((a, b) => a.d.efficiency - b.d.efficiency);
   const candidate = comparable[0];
@@ -2761,11 +2774,16 @@ function refreshReports() {
   });
 }
 
-const activityStep = 300;
-const activityRetention = 576;
+const activityPeriods = [300, 900, 3600];
+const activityLimits = [576, 672, 720];
+let activityFocus;
+function activityTier(range = activityRange) {
+  return range === 'month' ? 2 : range === 'week-detail' ? 1 : 0;
+}
+function activityStep() { return activityPeriods[activityTier()]; }
 const activityFlags = {on:16, off:8, metered:32, catchup:64, preview:128, bridge:1, partial:2, gap:8};
 const activityColors = {solar:'#77dcb1', grid:'#a6b7cb', paid:'#ffb478', bridge:'#d4b4ff',
-  relay:'#87bfff', preset:'#f5abdc', miners:['#6dbaff','#edaaef','#f2d079','#91e0e4']};
+  relay:'#87bfff', preset:'#f5abdc', miners:['#6dbaff','#edaaef','#f2d079','#91e0e4','#f38986','#bda3fd','#a6d883','#ffad71']};
 const activityLanes = [['relay','Relay'], ['preset','Power mode'], ['bridge','Bridge']];
 const activityLower = {
   energy:{title:'Tariff-accounted energy  /  Wh', label:'Tariff-accounted energy'},
@@ -2782,12 +2800,14 @@ function resetActivity() {
   activityData = activityGeometry = undefined;
   activityLoaded = activityFilter = activityLoadError = '';
   activityRange = 'recent';
+  activityFocus = undefined;
   activityIndex = -1;
   activityEpoch = 0;
   ++activityRequest;
   el('activity-paid').value = 'energy';
   el('activity-miners').replaceChildren();
   el('activity-events').replaceChildren();
+  el('activity-more-events').hidden = true;
 }
 
 function activityDateOptions(options) {
@@ -2825,8 +2845,14 @@ function activityMidnight(day) {
 
 function activityWindow(range, now) {
   const day = state.localDay;
-  if (range === 'recent') return [Math.floor(now / activityStep) * activityStep - 6 * 3600, now];
-  if (range === 'retained') return [Math.floor(now / activityStep) * activityStep - activityRetention * activityStep, now];
+  if (activityFocus) return activityFocus;
+  if (range === 'month' || range === 'week-detail') {
+    const tier = activityTier(range);
+    const step = activityPeriods[tier];
+    return [Math.floor(now / step) * step - activityLimits[tier] * step, now];
+  }
+  if (range === 'recent') return [Math.floor(now / activityStep()) * activityStep() - 6 * 3600, now];
+  if (range === 'retained') return [Math.floor(now / activityStep()) * activityStep() - activityLimits[0] * activityStep(), now];
   if (range === 'today') return [activityMidnight(day), now];
   if (range === 'yesterday') return [activityMidnight(day - 1), activityMidnight(day)];
   return [activityMidnight(day - 6), now];
@@ -2845,31 +2871,32 @@ function refreshTimeline() {
     return;
   }
   const range = activityRange;
-  const scope = [range, state.localDay, state.timezone, state.offset].join('/');
+  const scope = [range, activityFocus?.join(','), state.localDay, state.timezone, state.offset].join('/');
   const signature = scope + '/' + Math.floor((now - 15) / 60);
   if (signature === activityLoaded) return;
   const request = activityRequest;
   return runBackground(async () => {
     const [from, to] = activityWindow(range, now);
-    const events = [];
-    const latest = Math.floor(now / activityStep);
-    const first = Math.max(latest - activityRetention, Math.floor(from / activityStep));
-    const last = Math.min(latest, Math.floor(to / activityStep));
+    const tier = activityTier(range);
+    const latest = Math.floor(now / activityStep());
+    const first = Math.max(latest - activityLimits[tier], Math.floor(from / activityStep()));
+    const last = Math.min(latest, Math.floor(to / activityStep()));
     const reuse = activityLoaded && activityData?.scope === scope && activityData.available &&
-      latest >= activityData.latest && Math.floor(activityData.from / activityStep) <= first;
-    const records = reuse ? new Map([...activityData.records].filter(([at]) => at >= first * activityStep)) : new Map();
+      latest >= activityData.latest && Math.floor(activityData.from / activityStep()) <= first;
+    const records = reuse ? new Map([...activityData.records].filter(([at]) => at >= first * activityStep())) : new Map();
     const reasons = reuse ? {...activityData.reasons} : {};
+    const events = reuse ? activityData.events.filter(event => event.at >= from && event.at <= to).reverse() : [];
     let available = false, before;
     let cursor = reuse ? Math.max(first, Math.min(last, activityData.latest - 1)) : first;
     const end = range === 'week' ? cursor : last;
-    let eventPages = 0;
+    let eventPages = 0, pages = 0;
     activityLoadError = '';
     try {
       do {
         const count = Math.min(72, Math.max(0, end - cursor));
-        const params = new URLSearchParams({count, end:cursor + count});
+        const params = new URLSearchParams({tier, count, end:cursor + count});
         if (before !== 0) {
-          params.set('events', Math.max(1, from, now - activityRetention * activityStep));
+          params.set('events', Math.max(1, from, reuse ? activityData.updated - 1 : 0));
           if (before != null) params.set('before', before);
           ++eventPages;
         }
@@ -2878,12 +2905,14 @@ function refreshTimeline() {
         available = data.available;
         for (const row of data.samples) records.set(row.at, row);
         Object.assign(reasons, data.reasons);
-        events.push(...(data.events || []).filter(event => event.at >= from && event.at <= to));
+        const found = (data.events || []).filter(event => event.at >= from && event.at <= to);
+        if (found.length) events.push(...found);
         before = data.before || 0;
         cursor += count;
+        if (++pages % 3 === 0 && !busy && Date.now() - lastStatusAt > 1200) await refreshStatus();
       } while (available && (cursor < end || (before && eventPages < 12)));
       const selection = activityData?.range === range && activityIndex >= 0 && activityEpoch;
-      activityData = {range, scope, from, to, latest, records, reasons, events:events.reverse(), available};
+      activityData = {range, scope, from, to, latest, records, reasons, events:[...new Map(events.map(event => [event.sequence ?? JSON.stringify(event), event])).values()].sort((a,b) => a.at - b.at), updated:now, older:reuse ? activityData.older : before, available};
       activityEpoch = selection || 0;
       activityLoaded = signature;
       renderActivity();
@@ -2919,12 +2948,16 @@ function activityEquipment() {
 function activityValues(sample, filter) {
   return sample?.miners.flatMap((m, slot) => m && (!filter || activityMinerKey(slot, m[0]) === filter)
     ? [{slot, id:m[0], watts:m[1] < 0 ? null : m[1], paid:m[2] / 1000, cost:m[3] / 100,
-        reason:activityData.reasons[m[4]], flags:m[5], paidPermission:m[6] || 0}] : []) || [];
+        reason:activityData.reasons[m[4]], flags:m[5], paidPermission:m[6] || 0, min:m[7], max:m[8], observations:m[9]}] : []) || [];
 }
 
-function activitySpend(miners) {
+function activitySpend(miners, sample) {
   const known = miners.filter(m => m.flags & activityFlags.metered);
-  return known.length ? {cost:known.reduce((sum, m) => sum + m.cost, 0), paid:known.reduce((sum, m) => sum + m.paid, 0)} : null;
+  const replacedCost = !activityFilter ? (sample?.replacedMillicents || 0) / 1000 : 0;
+  const replacedPaid = !activityFilter ? (sample?.replacedMwh || 0) / 1000 : 0;
+  return known.length || replacedCost || replacedPaid
+    ? {cost:known.reduce((sum, m) => sum + m.cost, replacedCost), paid:known.reduce((sum, m) => sum + m.paid, replacedPaid)}
+    : null;
 }
 
 function activityPoints() {
@@ -2936,12 +2969,12 @@ function activityPoints() {
     });
   }
   const {from, to, latest, records} = activityData;
-  const first = Math.floor(from / activityStep), last = Math.ceil(to / activityStep);
+  const first = Math.floor(from / activityStep()), last = Math.ceil(to / activityStep());
   return Array.from({length:Math.max(0, last - first)}, (_, index) => {
-    const at = (first + index) * activityStep;
+    const at = (first + index) * activityStep();
     const sample = records.get(at);
     const miners = activityValues(sample, activityFilter);
-    return {at, sample, miners, spend:activitySpend(miners), pending:first + index >= latest};
+    return {at, sample, miners, spend:activitySpend(miners, sample), pending:first + index >= latest};
   });
 }
 
@@ -3026,8 +3059,8 @@ function renderActivity() {
   if (!note && !state.time?.epoch) note = 'History starts when the controller has a synchronized clock.';
   else if (!note && !ready) note = 'Loading activity…';
   else if (!note && !weekly && !activityData.available) note = 'History storage is unavailable on this controller.';
-  else if (!note && !weekly && !recorded) note = 'No five-minute readings in this range. New readings appear as each interval closes.';
-  else if (!note && weekly) note = 'Today’s totals are still accumulating. Event markers show the actions retained in the last 48 hours.';
+  else if (!note && !weekly && !recorded) note = 'No readings in this range. New readings appear as each interval closes.';
+  else if (!note && weekly) note = 'Today’s totals are still accumulating. Event markers show when actions occurred.';
   else if (!note) note = recorded + ' of ' + points.filter(p => !p.pending).length +
     ' completed intervals recorded. Blank segments indicate unavailable readings.';
   el('activity-status').textContent = note;
@@ -3052,7 +3085,7 @@ function activityEventTime(epoch, seconds = false) {
 function inspectActivity(points = activityPoints()) {
   const weekly = activityRange === 'week';
   const point = points[activityIndex];
-  const end = point ? weekly ? activityMidnight(point.day + 1) : point.at + activityStep : 0;
+  const end = point ? weekly ? activityMidnight(point.day + 1) : point.at + activityStep() : 0;
   const scrub = el('activity-scrub');
   scrub.value = Math.max(0, activityIndex);
   const selected = point ? weekly ? dayLabel(point.day) + (point.day === state.localDay ? ' · partial day' : '') :
@@ -3097,11 +3130,13 @@ function inspectActivity(points = activityPoints()) {
     title.prepend(activitySwatch(activityColors.miners[m.slot]));
     const status = m.flags & activityFlags.on ? 'Relay on' : m.flags & activityFlags.off ? 'Relay off' : 'Relay unobserved';
     const mode = m.flags & 7;
-    const working = point.sample?.flags & (16 << m.slot);
+    const working = point.sample?.productive & (1 << m.slot);
     card.append(title, entry('p', [equipment?.model && equipment.model !== label && equipment.model, status,
       working && 'Hashing observed',
       mode && powerModeLabel(mode), m.watts != null && reading(m.watts, 'W', 0) + ' average']
       .filter(Boolean).join(' · ')));
+    if (m.observations) card.append(entry('p', reading(m.min, 'W', 0) + ' min · ' +
+      reading(m.max, 'W', 0) + ' max · ' + m.observations + ' readings', 'muted'));
     if (m.reason) card.append(entry('p', (m.flags & activityFlags.preview ? 'Proposed policy · ' : '') + m.reason, 'muted'));
     if (m.flags & activityFlags.metered) card.append(entry('p',
       activityCurrency(m.cost) + ' estimated · ' + reading(m.paid, 'Wh', 2) + ' at tariff' +
@@ -3114,9 +3149,15 @@ function inspectActivity(points = activityPoints()) {
   }
   el('activity-miners').replaceChildren(...minerCards);
   const drill = el('activity-drill');
-  drill.hidden = !weekly || !point || end <= (activityData?.latest - activityRetention) * activityStep;
-  drill.dataset.range = point?.day === state.localDay ? 'today' : point?.day === state.localDay - 1 ? 'yesterday' : 'retained';
+  const now = state.time?.epoch || 0, tier = activityTier();
+  const finer = tier === 2 && point?.at >= now - 7 * 86400 ? 'week-detail' :
+    (tier === 1 || weekly) && end > now - 48 * 3600 ? 'retained' : '';
+  drill.hidden = !finer || !point;
+  drill.textContent = finer === 'week-detail' ? 'Inspect 15-minute history' : 'Inspect five-minute history';
+  drill.onclick = () => selectActivityRange(finer, [Math.max(point.at - 7200,
+    now - (finer === 'week-detail' ? 7 * 86400 : 48 * 3600)), Math.min(now, end + 7200)]);
   const events = activityVisibleEvents();
+  el('activity-more-events').hidden = !activityData?.older || activityData.range !== activityRange;
   const exact = point ? events.filter(event => event.at >= point.at && event.at < end) : [];
   const rows = (exact.length ? exact : events.slice(-4)).slice(-12).reverse().map(event => {
     const row = entry('li', '');
@@ -3125,7 +3166,7 @@ function inspectActivity(points = activityPoints()) {
     button.setAttribute('aria-label', 'Inspect ' + activityEventTime(event.at, true) + ' · ' + event.label);
     button.onclick = () => {
       const index = weekly ? points.findIndex(p => event.at >= p.at && event.at < activityMidnight(p.day + 1)) :
-        points.findIndex(p => event.at >= p.at && event.at < p.at + activityStep);
+        points.findIndex(p => event.at >= p.at && event.at < p.at + activityStep());
       if (index < 0) return;
       selectActivity(index, points);
       el('activity-scrub').focus({preventScroll:true});
@@ -3145,9 +3186,10 @@ function selectActivity(index, points = activityPoints()) {
   inspectActivity(points);
 }
 
-function selectActivityRange(range) {
-  if (range === activityRange) return;
+function selectActivityRange(range, focus) {
+  if (range === activityRange && !activityFocus && !focus) return;
   activityRange = range;
+  activityFocus = focus;
   activityLoaded = activityLoadError = '';
   activityIndex = -1;
   activityEpoch = 0;
@@ -3181,7 +3223,7 @@ function drawActivity(points = activityPoints(), events = activityVisibleEvents(
   const data = activityData?.range === activityRange ? activityData : null;
   const position = epoch => left + span * (epoch - data.from) / Math.max(1, data.to - data.from);
   const pointX = (p, index) => weekly ? left + (index + .5) * span / 7 :
-    position((Math.max(p.at, data.from) + Math.min(data.to, p.at + activityStep)) / 2);
+    position((Math.max(p.at, data.from) + Math.min(data.to, p.at + activityStep())) / 2);
   const fontMono = '11px ui-monospace, monospace';
   function text(label, x, y, color = '#aebdc8', align = 'left', font = fontMono) {
     ctx.fillStyle = color;
@@ -3213,9 +3255,9 @@ function drawActivity(points = activityPoints(), events = activityVisibleEvents(
     return y;
   }
   const meterMax = activityScale(Math.max(weekly ? 0 : 10, ...points.map(p => weekly ? (p.daily?.metered ? p.daily.kwh : 0) :
-    Math.max(p.sample?.solar || 0, p.sample?.grid || 0, ...p.miners.map(m => m.watts || 0)))));
-  const meterMin = weekly ? 0 : -activityScale(Math.max(0, ...points.map(p => -(p.sample?.grid || 0))));
-  const exporting = !weekly && points.some(p => p.sample?.grid < 0);
+    Math.max(p.sample?.solarMax ?? p.sample?.solar ?? 0, p.sample?.gridMax ?? p.sample?.grid ?? 0, ...p.miners.map(m => m.max ?? m.watts ?? 0)))));
+  const meterMin = weekly ? 0 : -activityScale(Math.max(0, ...points.map(p => -(p.sample?.gridMin ?? p.sample?.grid ?? 0))));
+  const exporting = !weekly && points.some(p => (p.sample?.gridMin ?? p.sample?.grid) < 0);
   const paidValue = p => weekly ? (p.daily?.metered ? p.daily.cents : null) :
     lower === 'budget' ? p.sample?.spent : lower === 'cost' ? p.spend?.cost : p.spend?.paid;
   const paidMax = activityScale(Math.max(0, ...points.map(p =>
@@ -3237,9 +3279,11 @@ function drawActivity(points = activityPoints(), events = activityVisibleEvents(
     });
   } else {
     const interval = data.to - data.from;
-    const step = [900,1800,3600,7200,10800,14400,21600,43200].find(value => value * ticks >= interval) || 43200;
+    const step = [900,1800,3600,7200,10800,14400,21600,43200,86400,172800,259200,432000,604800]
+      .find(value => value * ticks >= interval) || 604800;
     const minuteOffset = activityMidnight(state.localDay);
-    const tickLabel = interval > 30 * 3600 ? activityDateOptions({weekday:'short',hour:'numeric'}) : null;
+    const tickLabel = interval > 3 * 86400 ? activityDateOptions({month:'short',day:'numeric'}) :
+      interval > 30 * 3600 ? activityDateOptions({weekday:'short',hour:'numeric'}) : null;
     for (let at = minuteOffset + Math.ceil((data.from - minuteOffset) / step) * step; at < data.to; at += step) {
       const x = position(at);
       if (x < left + 7 || x > right - 22) continue;
@@ -3250,7 +3294,7 @@ function drawActivity(points = activityPoints(), events = activityVisibleEvents(
   const chosen = points[activityIndex];
   if (chosen) {
     const x = pointX(chosen, activityIndex);
-    const mark = weekly ? span / 7 : Math.max(3, span * activityStep / (data.to - data.from));
+    const mark = weekly ? span / 7 : Math.max(3, span * activityStep() / (data.to - data.from));
     ctx.fillStyle = '#537a9633';
     ctx.fillRect(x - mark / 2, mainTop, mark, height - mainTop - 25);
     line(x, mainTop, x, height - 25, '#97caff73');
@@ -3276,13 +3320,13 @@ function drawActivity(points = activityPoints(), events = activityVisibleEvents(
       ctx.fillRect(x, yPaid(report.cents), bar, Math.max(1, paidBottom - yPaid(report.cents)));
     });
   } else {
-    const bar = Math.max(1, span * activityStep / Math.max(1, data.to - data.from) * .77);
+    const bar = Math.max(1, span * activityStep() / Math.max(1, data.to - data.from) * .77);
     points.forEach((point, index) => {
       const x = pointX(point, index);
       if (point.sample?.flags & activityFlags.bridge) {
         ctx.fillStyle = '#ab80f224';
         const start = position(Math.max(data.from, point.at));
-        const end = position(Math.min(data.to, point.at + activityStep));
+        const end = position(Math.min(data.to, point.at + activityStep()));
         ctx.fillRect(start, mainTop, end - start + .2, paidBottom - mainTop);
       }
       const value = paidValue(point);
@@ -3331,6 +3375,16 @@ function drawActivity(points = activityPoints(), events = activityVisibleEvents(
         else segment.push([pointX(point,index), scale(reading)]);
       });
       paint();
+    }
+    if (activityTier()) {
+      points.forEach((p, i) => {
+        const x = pointX(p, i);
+        if (p.sample?.gridMin != null) line(x, yPower(p.sample.gridMin), x, yPower(p.sample.gridMax), activityColors.grid + '55');
+        if (p.sample?.solarMin != null) line(x, yPower(p.sample.solarMin), x, yPower(p.sample.solarMax), activityColors.solar + '55');
+        if (activityFilter) for (const m of p.miners) {
+          if (m.observations) line(x, yPower(m.min), x, yPower(m.max), activityColors.miners[m.slot] + '88');
+        }
+      });
     }
     trace(p => p.sample?.solar, activityColors.solar, [], true);
     trace(p => p.sample?.grid, activityColors.grid, [4,4]);
@@ -3386,7 +3440,7 @@ function chooseActivityAt(event) {
   const ratio = (event.offsetX - left) / (right - left);
   if (ratio < 0 || ratio > 1) return;
   const index = weekly ? Math.floor(ratio * points.length) :
-    Math.floor((data.from + ratio * (data.to - data.from) - points[0].at) / activityStep);
+    Math.floor((data.from + ratio * (data.to - data.from) - points[0].at) / activityStep());
   selectActivity(Math.min(points.length - 1, index), points);
 }
 function fillAssociation() {
@@ -3776,6 +3830,7 @@ function paint(next) {
     return;
   }
   if (initial) {
+    syncAssociationOptions();
     fillForm();
     fillMiningForm();
     fillTimeForm();
@@ -4277,7 +4332,7 @@ function baseConfig() {
     rateWindows:day.rateWindows.map(r => ({...r,rate:Math.round(r.rate * 1000)}))});
   const weekend = state.weekend?.enabled ? {enabled:true, ...priced(state.weekend)} : {enabled:false};
   return {
-    format:'dispatch-configuration', version:3, timezone:state.timezone, offset:state.offset,
+    format:'dispatch-configuration', version:4, timezone:state.timezone, offset:state.offset,
     operating:existingOperating(),
     ...priced(savedDayPlan()), weekend, rate:Math.round(state.rate * 1000), allowance:Math.round(state.allowance * 1000),
     equipment:state.devices.map((d, slot) => ({slot,ip:d.ip,identity:d.identity,minerIp:d.minerIp})),
@@ -4332,8 +4387,8 @@ function checkPlan(p) {
 }
 
 function validateImport(p) {
-  if (!p || p.format !== 'dispatch-configuration' || p.version !== 3) {
-    throw new Error('Choose a version 3 DISPATCH configuration file.');
+  if (!p || p.format !== 'dispatch-configuration' || ![3, 4].includes(p.version)) {
+    throw new Error('Choose a version 3 or 4 DISPATCH configuration file.');
   }
   if (typeof p.weekend?.enabled !== 'boolean') {
     throw new Error('The configuration version does not match its weekend settings.');
@@ -4354,7 +4409,7 @@ function validateImport(p) {
       throw new Error('Check the saved paid power permissions and daylight settings.');
     }
   }
-  if (!Array.isArray(p.equipment) || p.equipment.length !== 4) throw new Error('The file must include all four equipment slots.');
+  if (!Array.isArray(p.equipment) || p.equipment.length !== (p.version === 3 ? 4 : state.devices.length)) throw new Error('The file must include an entry for each equipment slot.');
   const miners = new Set();
   const targets = [];
   const outletKey = d => {
@@ -4502,10 +4557,26 @@ el('activity-miner').onchange = event => {
   activityFilter = event.target.value;
   renderActivity();
 };
+el('activity-more-events').onclick = () => {
+  const current = activityData;
+  const request = activityRequest;
+  if (!current?.older) return;
+  return runBackground(async () => {
+    try {
+      const params = new URLSearchParams({count:0, events:Math.max(1,current.from), before:current.older});
+      const data = await api('timeline?' + params);
+      if (activityRequest !== request || activityData !== current) return;
+      current.older = data.before;
+      current.events.unshift(...(data.events || []).filter(event => event.at <= current.to).reverse());
+      renderActivity();
+    } catch (error) {
+      el('activity-status').textContent = error.message;
+    }
+  });
+};
 el('activity-paid').onchange = renderActivity;
 el('activity-scrub').oninput = event => selectActivity(Number(event.target.value));
 el('activity-plot').onclick = chooseActivityAt;
-el('activity-drill').onclick = event => selectActivityRange(event.target.dataset.range);
 new ResizeObserver(() => { if (view === 'activity') drawActivity(); }).observe(el('activity-plot'));
 el('review-support').onclick = () => {
   support = JSON.stringify(supportReport(), null, 2);
@@ -4765,7 +4836,7 @@ el('resume-meter').onclick = async () => {
 };
 el('clear-account').onclick = async () => {
   const active = state.enabled ? ' DISPATCH may switch outlets under the new balance.' : '';
-  if (!confirm('Reset the daily electricity allowance and clear its saved daily reports? The five-minute activity log keeps a record of the reset.' + active)) return;
+  if (!confirm('Reset the daily electricity allowance and clear its saved daily reports? The Activity event log keeps a record of the reset.' + active)) return;
   if (await change('action', {mode:'clear-account', confirm:1}, 'accounting-message')) {
     el('accounting-message').textContent = 'Daily reports cleared and allowance reset.';
     reportStale = true;

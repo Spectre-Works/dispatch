@@ -23,7 +23,7 @@
 extern const char web_index[] asm("_binary_index_html_start");
 extern const char web_gzip[] asm("_binary_dispatch_index_html_gz_start");
 extern const char web_gzip_end[] asm("_binary_dispatch_index_html_gz_end");
-enum { FORM_BYTES = 2304, IMPORT_FORM_BYTES = 1280, SINGLE_FORM_BYTES = 896 };
+enum { FORM_BYTES = 2304, IMPORT_FORM_BYTES = 2304, SINGLE_FORM_BYTES = 896 };
 static uint32_t web_stack;
 static size_t lowest_largest = SIZE_MAX;
 static installation_view snapshot;
@@ -459,7 +459,7 @@ static bool timeline_parameter(const char *query, const char *name, uint32_t *va
     return true;
 }
 
-static void timeline_write_samples(httpd_req_t *request, uint32_t first, uint32_t end)
+static void timeline_write_samples(httpd_req_t *request, unsigned tier, uint32_t first, uint32_t end)
 {
     _Static_assert((unsigned)DISPATCH_START_WINDOW_SHORT <= TIMELINE_REASON_MASK, "Activity reason mask capacity");
     uint64_t reasons = 0;
@@ -467,14 +467,20 @@ static void timeline_write_samples(httpd_req_t *request, uint32_t first, uint32_
     add(request, ",\"samples\":[");
     for (uint32_t bucket = first; bucket < end && output_error == ESP_OK; ++bucket) {
         timeline_sample sample;
-        if (!timeline_sample_read(bucket, &sample)) continue;
-        add(request, "%s{\"at\":%lu", emitted ? "," : "", (unsigned long)bucket * TIMELINE_SECONDS);
+        if (!timeline_sample_read(tier, bucket, &sample)) continue;
+        add(request, "%s{\"at\":%lu", emitted ? "," : "", (unsigned long)bucket * timeline_period(tier));
         emitted = true;
         nullable(request, "solar", sample.solar_decawatts != TIMELINE_UNKNOWN_WATTS, sample.solar_decawatts * 10);
         nullable(request, "grid", sample.grid_decawatts != TIMELINE_UNKNOWN_GRID, sample.grid_decawatts * 10);
         nullable(request, "spent", sample.flags & TIMELINE_BUDGET, sample.spent_millicents / 1000.0);
         nullable(request, "limit", sample.flags & TIMELINE_BUDGET && sample.allowance_millicents, sample.allowance_millicents / 1000.0);
-        add(request, ",\"flags\":%u,\"miners\":[", sample.flags & 0xff);
+        add(request, ",\"flags\":%u,\"productive\":%u,\"replacedMwh\":%lu,\"replacedMillicents\":%lu",
+            sample.flags, sample.productive, (unsigned long)sample.replaced_mwh, (unsigned long)sample.replaced_millicents);
+        nullable(request, "solarMin", sample.solar_count, sample.solar_min * 10);
+        nullable(request, "solarMax", sample.solar_count, sample.solar_max * 10);
+        nullable(request, "gridMin", sample.grid_count, sample.grid_min * 10);
+        nullable(request, "gridMax", sample.grid_count, sample.grid_max * 10);
+        add(request, ",\"miners\":[");
         for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
             const timeline_miner *m = &sample.miner[i];
             if (i) add(request, ",");
@@ -483,8 +489,10 @@ static void timeline_write_samples(httpd_req_t *request, uint32_t first, uint32_
                 continue;
             }
             const unsigned reason = m->reason & TIMELINE_REASON_MASK;
-            add(request, "[%u,%d,%lu,%u,%u,%u,%u]", m->identity, m->watts == TIMELINE_UNKNOWN_WATTS ? -1 : m->watts,
-                (unsigned long)m->paid_mwh, m->cost_centicents, reason, m->status, (unsigned)m->reason >> 6);
+            add(request, "[%u,%d,%lu,%.1f,%u,%u,%u,%d,%d,%u]", m->identity,
+                m->watts == TIMELINE_UNKNOWN_WATTS ? -1 : m->watts,
+                (unsigned long)m->paid_mwh, m->cost_millicents / 10.0, reason, m->status, (unsigned)m->reason >> 6,
+                m->observations ? m->minimum : -1, m->observations ? m->maximum : -1, m->observations);
             if (reason <= DISPATCH_START_WINDOW_SHORT) reasons |= 1ULL << reason;
         }
         add(request, "]}");
@@ -503,16 +511,18 @@ static void timeline_write_samples(httpd_req_t *request, uint32_t first, uint32_
 
 static void timeline_write_events(httpd_req_t *request, uint32_t from, uint32_t before)
 {
-    enum { SCAN_LIMIT = 128, EVENT_LIMIT = 48, EVENT_CAPACITY = 510 };
+    enum { SCAN_LIMIT = 128, EVENT_LIMIT = 48 };
+    const unsigned capacity = timeline_event_capacity();
     const uint32_t cursor = timeline_event_cursor();
-    const uint32_t earliest = cursor > EVENT_CAPACITY ? cursor - EVENT_CAPACITY : 0;
+    const uint32_t earliest = cursor > capacity ? cursor - capacity : 0;
     uint32_t position = before < cursor ? before : cursor;
     unsigned emitted = 0;
     add(request, ",\"events\":[");
     for (unsigned scanned = 0; position > earliest && scanned < SCAN_LIMIT &&
         emitted < EVENT_LIMIT && output_error == ESP_OK; ++scanned) {
         timeline_event event;
-        if (!timeline_event_read(--position, &event) || event.epoch < from) continue;
+        if (!timeline_event_read(--position, &event)) continue;
+        if (event.epoch < from) { position = earliest; break; }
         const char *lane = "relay", *edge = "note";
         switch (event.kind) {
             case EVENT_DAYLIGHT_BRIDGE_STARTED: lane = "bridge"; edge = "start"; break;
@@ -530,8 +540,8 @@ static void timeline_write_events(httpd_req_t *request, uint32_t from, uint32_t 
         }
         const char *label = installation_event(event.kind);
         if (!label) continue;
-        add(request, "%s{\"at\":%lu,\"slot\":%u,\"id\":%u,\"lane\":\"%s\",\"edge\":\"%s\",\"label\":\"%s\"",
-            emitted++ ? "," : "", (unsigned long)event.epoch, event.slot, event.identity, lane, edge, label);
+        add(request, "%s{\"at\":%lu,\"sequence\":%lu,\"slot\":%u,\"id\":%u,\"lane\":\"%s\",\"edge\":\"%s\",\"label\":\"%s\"",
+            emitted++ ? "," : "", (unsigned long)event.epoch, (unsigned long)event.sequence, event.slot, event.identity, lane, edge, label);
         if (event.reason <= DISPATCH_DAYLIGHT_EVIDENCE ||
             (event.reason >= DISPATCH_POWER_TEST && event.reason <= DISPATCH_START_WINDOW_SHORT))
             add(request, ",\"reason\":\"%s\"", dispatch_explanation(event.reason));
@@ -544,23 +554,25 @@ static esp_err_t timeline_page(httpd_req_t *request)
 {
     if (!authorize(request) || network_setup_active()) return reply(request, "401 Unauthorized", "Enter the owner key.");
     const uint32_t now = network_clock();
-    const uint32_t latest = now / TIMELINE_SECONDS;
-    const uint32_t oldest = latest > TIMELINE_BUCKETS ? latest - TIMELINE_BUCKETS : 0;
-    uint32_t end = latest, count = TIMELINE_PAGE, event_from = 0, before = UINT32_MAX;
+    uint32_t tier = 0, end = UINT32_MAX, count = TIMELINE_PAGE, event_from = 0, before = UINT32_MAX;
     char query[112] = "";
     if (httpd_req_get_url_query_len(request) &&
         (httpd_req_get_url_query_str(request, query, sizeof(query)) != ESP_OK ||
+         !timeline_parameter(query, "tier", &tier) || tier >= TIMELINE_TIERS ||
          !timeline_parameter(query, "end", &end) || !timeline_parameter(query, "count", &count) ||
          !timeline_parameter(query, "events", &event_from) || !timeline_parameter(query, "before", &before))) {
         return reply(request, "400 Bad Request", "Invalid activity range.");
     }
+    const unsigned period = timeline_period(tier), retained = timeline_retention(tier);
+    const uint32_t latest = now / period;
+    const uint32_t oldest = latest > retained ? latest - retained : 0;
     if (end > latest) end = latest;
     if (count > TIMELINE_PAGE) count = TIMELINE_PAGE;
     const uint32_t first = end > count && end - count > oldest ? end - count : oldest;
     json_begin(request);
     add(request, "{\"available\":%s,\"now\":%lu,\"period\":%u,\"retained\":%u",
-        truth(timeline_available()), (unsigned long)now, TIMELINE_SECONDS, TIMELINE_BUCKETS);
-    timeline_write_samples(request, first, end);
+        truth(timeline_available()), (unsigned long)now, period, retained);
+    timeline_write_samples(request, tier, first, end);
     if (event_from) timeline_write_events(request, event_from, before);
     add(request, "}");
     return json_end(request);
@@ -1035,7 +1047,7 @@ static esp_err_t save_installation(const char **error, operating_scenario *scena
 static esp_err_t import_installation(const char **error)
 {
     int version;
-    if (!integer("version", 3, 3, &version)) {
+    if (!integer("version", 3, 4, &version)) {
         *error = "Unsupported configuration file version.";
         return ESP_ERR_INVALID_ARG;
     }
@@ -1048,7 +1060,8 @@ static esp_err_t import_installation(const char **error)
     operating_settings operating = {0};
     if (read_operating(&operating, error) != ESP_OK) return ESP_ERR_INVALID_ARG;
     association devices[DISPATCH_LIMIT] = {0};
-    for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
+    const unsigned slots = version == 3 ? 4 : DISPATCH_LIMIT;
+    for (unsigned i = 0; i < slots; ++i) {
         char ip[] = "ip0", identity[] = "identity0", miner[] = "miner0";
         ip[2] += i; identity[8] += i; miner[5] += i;
         issue = read_association(&devices[i], ip, identity, miner);
