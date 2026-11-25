@@ -70,12 +70,20 @@ dispatch_reason dispatch_operation_limit(const dispatch_inputs *in)
     return DISPATCH_WINDOW_OPEN;
 }
 
-static dispatch_reason paid_budget(const dispatch_inputs *in, unsigned start, uint32_t extra_watts)
+enum { PAID_SWITCH_RESERVE_SECONDS = 20 * DISPATCH_LIMIT };
+
+static dispatch_reason budget_reserve(const dispatch_inputs *in, bool accounting_valid, uint64_t watt_seconds)
 {
     const uint64_t limit = (uint64_t)in->policy.daily_allowance_millicents * 1000000;
     if (!limit) return DISPATCH_WINDOW_OPEN;
-    if (!in->accounting_valid) return DISPATCH_BUDGET_UNKNOWN;
+    if (!accounting_valid) return DISPATCH_BUDGET_UNKNOWN;
     if (in->used_nano_cents >= limit) return DISPATCH_BUDGET_USED;
+    const uint64_t milliwh = (watt_seconds * 1000 + 3599) / 3600;
+    return milliwh * in->guard_rate <= limit - in->used_nano_cents ? DISPATCH_WINDOW_OPEN : DISPATCH_PAID_RESERVE;
+}
+
+static dispatch_reason paid_budget(const dispatch_inputs *in, unsigned start, uint32_t extra_watts)
+{
     uint32_t watts = in->solar.running_watts + in->solar.committed_watts;
     if (!in->solar.load_known) watts = DISPATCH_LIMIT * DISPATCH_METER_CHANNEL_WATTS;
     if (start < DISPATCH_LIMIT && !(in->solar.reserved_start_mask & (1u << start))) {
@@ -83,9 +91,8 @@ static dispatch_reason paid_budget(const dispatch_inputs *in, unsigned start, ui
     }
     watts += extra_watts;
     // Cover a full minimum-on interval for a new start, plus polling and sequential relay commands.
-    const uint32_t seconds = 20 * DISPATCH_LIMIT + (start < DISPATCH_LIMIT ? DISPATCH_MIN_ON : 0);
-    const uint64_t milliwh = ((uint64_t)watts * seconds * 1000 + 3599) / 3600;
-    return milliwh * in->guard_rate <= limit - in->used_nano_cents ? DISPATCH_WINDOW_OPEN : DISPATCH_PAID_RESERVE;
+    const uint32_t seconds = PAID_SWITCH_RESERVE_SECONDS + (start < DISPATCH_LIMIT ? DISPATCH_MIN_ON : 0);
+    return budget_reserve(in, in->accounting_valid, (uint64_t)watts * seconds);
 }
 
 bool dispatch_paid_room(const dispatch_inputs *in, uint32_t extra_watts)
@@ -101,11 +108,14 @@ dispatch_reason dispatch_bridge_permission(const dispatch_inputs *in)
     const dispatch_daylight_bridge *bridge = &solar->bridge;
     if (!bridge->enabled) return DISPATCH_PAID_DISABLED;
     if (!bridge->daylight) return DISPATCH_DAYLIGHT_DARK;
-    if (!solar->fresh || !solar->load_known ||
-        (in->grid_source && !in->grid_recent_export && !bridge->recent_solar)) return DISPATCH_DAYLIGHT_EVIDENCE;
-    if (!dispatch_solar_deficit(solar)) return DISPATCH_DAYLIGHT_WAIT;
+    const bool retained_off = bridge->unobserved_watts != 0;
+    if (!solar->load_known && !retained_off) return DISPATCH_DAYLIGHT_EVIDENCE;
+    if (!solar->running_watts || (solar->fresh && solar->load_known && !dispatch_solar_deficit(solar)))
+        return DISPATCH_DAYLIGHT_WAIT;
     if (!bridge->seconds) return DISPATCH_DAYLIGHT_EXPIRED;
-    const dispatch_reason budget = paid_budget(in, DISPATCH_LIMIT, 0);
+    const uint32_t watts = solar->running_watts + solar->committed_watts + bridge->unobserved_watts;
+    const uint64_t watt_seconds = (uint64_t)watts * PAID_SWITCH_RESERVE_SECONDS + bridge->unobserved_watt_seconds;
+    const dispatch_reason budget = budget_reserve(in, in->accounting_valid || retained_off, watt_seconds);
     if (budget == DISPATCH_PAID_RESERVE) return DISPATCH_DAYLIGHT_BUDGET;
     return budget == DISPATCH_WINDOW_OPEN ? DISPATCH_DAYLIGHT_BRIDGE : budget;
 }
@@ -358,7 +368,7 @@ const char *dispatch_explanation(dispatch_reason reason)
         [DISPATCH_DAYLIGHT_BRIDGE] = "Paid electricity is keeping the running miner on through a daylight gap",
         [DISPATCH_DAYLIGHT_EXPIRED] = "Daylight gap coverage reached its time limit",
         [DISPATCH_DAYLIGHT_BUDGET] = "Too little paid allowance remains to bridge this gap",
-        [DISPATCH_DAYLIGHT_EVIDENCE] = "Daylight gap coverage needs recent solar and outlet readings",
+        [DISPATCH_DAYLIGHT_EVIDENCE] = "Daylight gap coverage needs readings from outlets that may be on",
         [DISPATCH_POWER_TEST] = "This outlet is reserved for the owner-approved first-run power test",
         [DISPATCH_PAID_DISABLED] = "Your plan does not allow paid mining",
         [DISPATCH_PAID_RESERVE] = "The remaining paid allowance cannot cover this action",

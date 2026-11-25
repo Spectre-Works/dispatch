@@ -402,13 +402,22 @@ static void daylight_gap_coverage(void)
     dispatch_plan(&in, out);
     assert(out[0].action == DISPATCH_KEEP && out[0].reason == DISPATCH_DAYLIGHT_BRIDGE);
     assert(out[1].action == DISPATCH_KEEP && out[1].reason == DISPATCH_DAYLIGHT_WAIT);
+    in.grid_source = true;
+    assert(dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_BRIDGE);
+    in.grid_source = false;
     in.solar.fresh = false;
+    assert(dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_BRIDGE);
+    dispatch_plan(&in, out);
+    assert(out[0].action == DISPATCH_KEEP && out[0].reason == DISPATCH_DAYLIGHT_BRIDGE);
+    assert(out[1].action == DISPATCH_KEEP);
+    in.solar.load_known = false;
     assert(dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_EVIDENCE);
     in.source_grace = true;
     assert(dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_EVIDENCE);
     dispatch_plan(&in, out);
     assert(out[0].action == DISPATCH_KEEP && out[1].action == DISPATCH_KEEP);
     in.solar.fresh = true;
+    in.solar.load_known = true;
     in.used_nano_cents = 21990000000ULL;
     assert(dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_BUDGET);
     dispatch_plan(&in, out);
@@ -449,7 +458,7 @@ static void daylight_bridge_presets(void)
         .priority = {2, 1}, .clock_valid = true, .accounting_valid = true, .now = 800,
         .solar = {.configured = true, .fresh = true, .load_known = true, .sustained = true,
                   .reserve = 200, .running_watts = 1460, .production = 1100, .supported_production = 1100,
-                  .bridge = {.enabled = true, .daylight = true, .seconds = 300, .recent_solar = true}},
+                  .bridge = {.enabled = true, .daylight = true, .seconds = 300}},
     };
     dispatch_decision out[DISPATCH_LIMIT];
     dispatch_solar_preset_slot slots[DISPATCH_LIMIT] = {
@@ -532,6 +541,7 @@ static void unified_operating_plan(void)
     in.minute = 800;
     in.used_nano_cents = 0;
     in.solar.fresh = false;
+    in.solar.bridge.enabled = false;
     in.source_grace = true;
     dispatch_plan(&in, out);
     assert(out[0].reason == DISPATCH_SOURCE_GRACE && out[1].action == DISPATCH_KEEP);
@@ -543,6 +553,7 @@ static void unified_operating_plan(void)
     assert(out[0].reason == DISPATCH_PAID_COVERAGE && out[1].reason == DISPATCH_PAID_START);
 
     in.grid_source = true;
+    in.solar.bridge.enabled = true;
     in.solar.fresh = true;
     in.solar.production = in.solar.supported_production = 1500;
     in.surplus.grid_watts = -770;

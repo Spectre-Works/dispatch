@@ -47,8 +47,9 @@ typedef struct {
 } dispatch_surplus;
 
 typedef struct {
-    uint32_t seconds, seconds_to_sunset, forecast_rate;
-    bool enabled, daylight, recent_solar;
+    uint32_t seconds, seconds_to_sunset, forecast_rate, unobserved_watt_seconds;
+    uint16_t unobserved_watts;
+    bool enabled, daylight;
 } dispatch_daylight_bridge;
 
 typedef struct {
@@ -143,7 +144,7 @@ typedef struct {
     bool clock_valid;
     bool paused;
     bool accounting_valid;
-    bool grid_source, source_grace, grid_recent_export;
+    bool grid_source, source_grace;
     uint32_t guard_rate;
     dispatch_surplus surplus;
     dispatch_generation solar;

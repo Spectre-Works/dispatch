@@ -38,9 +38,9 @@ reserve for other loads.
 
 Missing or stale energy readings block solar-dependent starts. Running
 outlets may wait up to 60 seconds after the last usable decision input,
-subject to the allowance. After that, a separate paid mining window can
-continue operation. When a selected meter becomes unavailable, DISPATCH
-continues to label it as the selected source.
+subject to the allowance. A paid mining window or daylight gap coverage can
+sustain running miners during a source outage. When a selected meter becomes
+unavailable, DISPATCH continues to label it as the selected source.
 
 Daylight gap coverage opens at the location-based sunrise. The controller
 checks the last seven evenings of 15-minute Activity records from its solar
@@ -53,6 +53,14 @@ DISPATCH applies their median offset to today's calculated sunset, up to
 90 minutes earlier or later. It uses the location-based estimate while the
 history is insufficient, after clearing Activity, or after replacing the
 solar production source until new history qualifies.
+
+Within daylight hours, gap coverage can keep observed running miners on
+while the energy source is unavailable. For the allowance, DISPATCH counts
+draw without measured solar coverage as paid. A different outlet last seen
+off can miss a reading without blocking this permission for up to 60 seconds
+from its latest successful observation. DISPATCH reserves for possible draw
+on that outlet. The gap timer, allowance, mining hours, and Quiet Hours still
+apply. Solar-dependent starts require fresh energy and outlet readings.
 
 ## Presets
 

@@ -33,7 +33,7 @@ enum { INSTALLATION_VERSION = 30, LEGACY_VERSION = 29, HOME_METER_VERSION = 28, 
        PRESET_PROBE_SECONDS = 120, PRESET_CONFIRM_SECONDS = 180, PRESET_SOLAR_DWELL = 600,
        PRESET_RETRY_SECONDS = 300, PRESET_LOAD_SECONDS = 120,
        SOLAR_DAY_POLL = 300, SOLAR_NIGHT_POLL = 1200, SOLAR_FRESH = 900, SOLAR_RETRY = 5,
-       SOLAR_START_RESERVATION = 30, BRIDGE_SOLAR_EVIDENCE_SECONDS = 600 };
+       SOLAR_START_RESERVATION = 30 };
 enum { PRESET_BINDING_BYTES = 192 };
 enum { ACTIVITY_GENERATION_TAG = 0x44534147 };
 enum { SOLAR_HISTORY_TAG = 0x5348, TELEMETRY_SECONDS = 10, SUNSET_HISTORY_TIER = 1,
@@ -252,7 +252,6 @@ static struct {
     ecu_reading reading;
     uint32_t at, cycle_at, retry_at, revision, epoch, progress_at, supported_watts, higher_watts;
     uint32_t low_since, low_epoch;
-    uint32_t lit_at, lit_epoch;
     ecu_result result;
     bool sampled, cycled, progress_seen, sustained, low_tracking;
 } solar;
@@ -268,7 +267,7 @@ static struct {
 } sunset_history;
 static struct {
     int32_t watts, previous_watts;
-    uint32_t at, epoch, poll_at, revision, import_since, covered_at;
+    uint32_t at, epoch, poll_at, revision, import_since;
     shelly_result result;
     uint32_t fronius_watts, fronius_at;
     bool sampled, attempted, importing, consecutive, fronius_known;
@@ -1876,22 +1875,16 @@ static void solar_shed_status(dispatch_inputs *in, bool powered)
     power->shed_needs_reading = !tracking || solar.at <= solar.low_since;
 }
 
-static void generation_load(dispatch_inputs *in, unsigned i, const dispatch_outlet *outlet, uint32_t now)
+static bool generation_load(dispatch_inputs *in, unsigned i, const dispatch_outlet *outlet, uint32_t now)
 {
-    if (!outlet->present) return;
+    if (!outlet->present) return true;
     dispatch_generation *solar_power = &in->solar;
     const device_runtime *device = &runtime[i];
     const uint16_t expected = startup_watts(i, state.follow.start_watts[i]);
     solar_power->start_watts[i] = expected;
-    if (!outlet->fresh) {
-        solar_power->load_known = false;
-        return;
-    }
+    if (!outlet->fresh) return false;
     if (outlet->on) {
-        if (!device->view.outlet.power_known) {
-            solar_power->load_known = false;
-            return;
-        }
+        if (!device->view.outlet.power_known) return false;
         const double watts = device->view.outlet.watts;
         const uint32_t rounded = (uint32_t)watts;
         const uint32_t draw = rounded + (rounded < watts);
@@ -1905,10 +1898,20 @@ static void generation_load(dispatch_inputs *in, unsigned i, const dispatch_outl
         }
     } else if (device->pending == DISPATCH_ON && device->tries &&
                now < device->next_command + SOLAR_START_RESERVATION) {
-        if (!expected) solar_power->load_known = false;
         solar_power->reserved_start_mask |= 1u << i;
         solar_power->committed_watts += expected;
+        return expected != 0;
     }
+    return true;
+}
+
+static bool recently_off(unsigned i, uint32_t now)
+{
+    const device_runtime *device = &runtime[i];
+    const device_view *view = &device->view;
+    return view->observed && !view->outlet.on && view->outlet_result != SHELLY_IDENTITY &&
+        network_online() && device->connection_epoch == network_epoch() && now - view->outlet_time <= SOURCE_GRACE_SECONDS &&
+        device->pending != DISPATCH_ON && !(state.hold_on & (1u << i)) && !testing_outlet(i);
 }
 
 static dispatch_inputs inputs(uint32_t now, time_t utc_now)
@@ -1922,8 +1925,6 @@ static dispatch_inputs inputs(uint32_t now, time_t utc_now)
         .used_nano_cents = state.budget.used_nano_cents,
         .operating = state.operating, .grid_source = grid_source,
         .source_grace = last_usable_power && now - last_usable_power <= SOURCE_GRACE_SECONDS,
-        .grid_recent_export = grid.covered_at && grid.epoch == network_epoch() &&
-            now - grid.covered_at <= BRIDGE_SOLAR_EVIDENCE_SECONDS,
         .paused = paused_at(utc_now),
         .accounting_valid = state.budget.gap_mask == 0,
         .surplus = {
@@ -1963,9 +1964,7 @@ static dispatch_inputs inputs(uint32_t now, time_t utc_now)
         in.solar.bridge = (dispatch_daylight_bridge){.enabled = true,
             .daylight = in.clock_valid && dispatch_in_daylight(sun, utc_now),
             .seconds = elapsed < duration ? duration - elapsed : 0,
-            .forecast_rate = dispatch_rate_at(in.policy.rate_millicents_per_kwh, tariff, in.minute, NULL),
-            .recent_solar = solar.lit_at && now - solar.lit_at <= BRIDGE_SOLAR_EVIDENCE_SECONDS &&
-                solar.lit_epoch == network_epoch() && solar.result != ECU_IDENTITY};
+            .forecast_rate = dispatch_rate_at(in.policy.rate_millicents_per_kwh, tariff, in.minute, NULL)};
         if (sun.kind == DAYLIGHT_RISE_SET && in.solar.bridge.daylight) {
             in.solar.bridge.seconds_to_sunset = sun.sunset - utc_now;
             if (in.solar.bridge.seconds_to_sunset < in.solar.bridge.seconds)
@@ -1973,6 +1972,8 @@ static dispatch_inputs inputs(uint32_t now, time_t utc_now)
         }
     }
     bool powered = false;
+    bool gap_load_known = true, gap_accounting_valid = in.accounting_valid;
+    uint32_t unobserved_watts = 0, unobserved_watt_seconds = 0;
     for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
         const device_runtime *device = &runtime[i];
         const bool present = state.settings.device[i].shelly.ip[0];
@@ -1985,15 +1986,30 @@ static dispatch_inputs inputs(uint32_t now, time_t utc_now)
             now - device->view.miner_time <= OBSERVATION_TTL) in.productive_mask |= 1u << i;
         in.solar_off_since[i] = device->solar_off_since;
         const slot_coordination *slot = &state.coordination[i];
-        generation_load(&in, i, &in.outlet[i], now);
+        const bool load_known = generation_load(&in, i, &in.outlet[i], now);
+        const bool retained_off = in.solar.bridge.daylight && present && !in.outlet[i].fresh && recently_off(i, now);
+        in.solar.load_known &= load_known;
+        gap_load_known &= load_known || retained_off;
+        if (retained_off) {
+            unobserved_watts += DISPATCH_METER_CHANNEL_WATTS;
+            unobserved_watt_seconds += DISPATCH_METER_CHANNEL_WATTS * (now - device->view.outlet_time);
+        }
         powered |= present && in.outlet[i].fresh && in.outlet[i].on;
         const bool override = utc_now && slot->override_until > (uint64_t)utc_now;
         in.priority[i] = override && slot->mode == OVERRIDE_PREFER ? UINT8_MAX : slot->priority;
         if (override && slot->mode == OVERRIDE_HOLD) in.manual_hold_mask |= 1u << i;
         if (utc_now && slot->recovery_until > (uint64_t)utc_now) in.recovery_hold_mask |= 1u << i;
-        if (present && !meter_current(i, in.outlet[i].fresh, utc_now, state.budget.day)) {
-            in.accounting_valid = false;
+        if (present) {
+            const bool anchored = meter_current(i, in.outlet[i].fresh || retained_off, utc_now, state.budget.day);
+            in.accounting_valid &= anchored && in.outlet[i].fresh;
+            gap_accounting_valid &= anchored;
         }
+    }
+    if (gap_load_known && (gap_accounting_valid || !in.policy.daily_allowance_millicents)) {
+        // A recent off reading can protect running miners through a short dropout.
+        // Reserve for possible unseen draw until the meter reports again.
+        in.solar.bridge.unobserved_watts = unobserved_watts;
+        in.solar.bridge.unobserved_watt_seconds = unobserved_watt_seconds;
     }
     if (grid_source) {
         const int32_t conservative = grid.previous_watts > grid.watts ? grid.previous_watts : grid.watts;
@@ -2107,7 +2123,7 @@ void installation_preview_plan(const dispatch_policy *policy, const dispatch_qui
     base.solar.shed_wait_seconds = 0;
     base.solar.shed_needs_reading = false;
     base.solar.bridge = (dispatch_daylight_bridge){.enabled = operating->daylight.enabled,
-        .daylight = true, .recent_solar = true, .seconds = operating->daylight.minutes * 60U};
+        .daylight = true, .seconds = operating->daylight.minutes * 60U};
     base.clock_valid = base.accounting_valid = base.solar.load_known = true;
     base.paused = false;
     base.used_nano_cents = 0;
@@ -3536,7 +3552,6 @@ static void grid_tick(void)
     if (revision == grid.revision && epoch == network_epoch() && network_online()) {
         if (operating_grid()) accrue_solar_credit(finished);
         const bool previously_fresh = grid_fresh(finished);
-        if (grid.epoch != epoch) grid.covered_at = 0;
         const bool importing = result == SHELLY_OK &&
             watts > 0;
         if (importing && (!grid.importing || !previously_fresh)) grid.import_since = finished;
@@ -3552,7 +3567,6 @@ static void grid_tick(void)
         if (result == SHELLY_OK) {
             grid.previous_watts = grid.watts;
             grid.watts = watts;
-            if (watts <= 0) grid.covered_at = finished;
             grid.at = finished;
             grid.sampled = true;
             log_grid_power(watts);
@@ -3624,10 +3638,6 @@ static void solar_tick(void)
         accrue_solar_credit(finished);
         if (status == ECU_OK) {
             remember_solar_reading(&reading, finished, epoch);
-            if (reading.watts > state.follow.reserve && reading.online && solar_control_fresh(finished)) {
-                solar.lit_at = finished;
-                solar.lit_epoch = epoch;
-            }
             ESP_LOGI("dispatch", "Solar sample: %lu W, source %s, %u/%u inverters",
                      (unsigned long)reading.watts, reading.firmware, reading.online, reading.inverters);
         }

@@ -44,7 +44,6 @@ static void grid_sample(uint32_t when, int32_t watts)
     grid.result = SHELLY_OK;
     grid.attempted = grid.sampled = grid.consecutive = true;
     grid.importing = watts > 0;
-    if (!grid.importing) grid.covered_at = when;
 }
 
 static void output(const char *step)
@@ -193,10 +192,65 @@ static void sunset_replay(bool restart)
     puts("Learned sunset drives daylight gap schedule, countdown and cutoff");
 }
 
+static void daylight_outlet_dropout(void)
+{
+    state.daylight = (daylight_settings){.latitude_e4 = 397392, .longitude_e4 = -1049903, .minutes = 30, .enabled = true};
+    state.solar = (solar_settings){.ip = "10.241.0.1", .port = 8899};
+    state.settings.policy.daily_allowance_millicents = 22000;
+    for (unsigned i = 0; i < 2; ++i) state.first_run[i] = RUN_MAPPING;
+    state.settings.device[0].shelly = (shelly_target){.ip = "10.241.0.1", .identity = "shellyplusplugsus-000000000001"};
+    state.settings.device[1].shelly = (shelly_target){.ip = "10.241.0.2", .identity = "shellyplusplugsus-000000000002"};
+    const dispatch_daylight sun = daylight_at(epoch);
+    const uint32_t spare_observed = sun.sunrise - epoch + 7200;
+    const shelly_sample spare = {.power_known = true, .energy_known = true, .total_mwh = 1000};
+    elapsed = spare_observed;
+    observation(1, SHELLY_OK, &spare, NULL, true, elapsed);
+    sample(elapsed, 700, 1000000);
+    runtime[0].since = elapsed - DISPATCH_MIN_ON;
+    solar.result = ECU_OK;
+    solar.sampled = solar.sustained = true;
+    solar.epoch = network_epoch();
+    solar.at = solar.progress_at = elapsed;
+    solar.reading.online = 1;
+    solar.reading.watts = solar.supported_watts = 1500;
+    dispatch_decision decisions[DISPATCH_LIMIT];
+    dispatch_inputs in = inputs(elapsed, replay_clock());
+    decide(&in, decisions, replay_clock());
+    assert(in.solar.bridge.daylight && !sunset_history.cutoff && decisions[0].reason == DISPATCH_SOLAR_COVERED);
+
+    sample(elapsed + 5, 700, 1000100);
+    observation(1, SHELLY_NETWORK, &spare, NULL, true, elapsed);
+    in = inputs(elapsed, replay_clock());
+    decide(&in, decisions, replay_clock());
+    assert(in.solar.fresh && !in.solar.load_known && !in.accounting_valid && !in.outlet[1].fresh);
+    assert(in.solar.bridge.unobserved_watts == DISPATCH_METER_CHANNEL_WATTS);
+    assert(decisions[0].action == DISPATCH_KEEP && decisions[0].reason == DISPATCH_DAYLIGHT_BRIDGE);
+    assert(decisions[1].action == DISPATCH_KEEP && decisions[1].reason == DISPATCH_UNOBSERVED);
+    in.used_nano_cents = 21000000000ULL;
+    assert(dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_BUDGET);
+    state.budget.gap_mask = 1u << 1;
+    in = inputs(elapsed, replay_clock());
+    assert(!dispatch_paid_covering(dispatch_paid_permission(&in)));
+    state.budget.gap_mask = 0;
+    runtime[1].pending = DISPATCH_ON;
+    in = inputs(elapsed, replay_clock());
+    assert(dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_EVIDENCE);
+    runtime[1].pending = DISPATCH_KEEP;
+
+    sample(spare_observed + SOURCE_GRACE_SECONDS + 1, 700, 1012000);
+    in = inputs(elapsed, replay_clock());
+    assert(!in.solar.bridge.unobserved_watts && dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_EVIDENCE);
+    puts("Calculated daylight keeps a running miner on through a short idle outlet dropout");
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3 || !preview_storage_open(argv[1])) return 1;
     installation_start();
+    if (!strcmp(argv[2], "daylight-dropout")) {
+        daylight_outlet_dropout();
+        return 0;
+    }
     if (!strcmp(argv[2], "sunset") || !strcmp(argv[2], "sunset-restart")) {
         sunset_replay(!strcmp(argv[2], "sunset-restart"));
         return 0;
