@@ -9,12 +9,15 @@ async function check() {
   const browser = await chromium.launch({ executablePath: process.env.DISPATCH_TEST_CHROMIUM });
   try {
     const page = await browser.newPage({ acceptDownloads: true });
+    const session = await page.context().newCDPSession(page);
+    await session.send('Page.setFontSizes', { fontSizes: { standard: 20 } });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(url);
     await page.locator('#owner-key').fill(await fs.readFile(keyFile, 'utf8'));
     await page.locator('#unlock').click();
     await page.locator('#dashboard').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('html').evaluate(root => getComputedStyle(root).fontSize), '16px');
     const mark = page.locator('.wordmark img');
     await mark.evaluate(img => img.decode());
     assert.equal(await page.getByRole('heading', { name: 'SPECTRE WORKS DISPATCH', level: 1 }).count(), 1);

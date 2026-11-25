@@ -10,6 +10,8 @@
 [data-edition="startos"] [data-atom-only],
 html:not([data-edition="startos"]) [data-startos-only]{display:none!important}
 :root{
+  font-size:16px;
+  -webkit-text-size-adjust:100%;text-size-adjust:100%;
   color-scheme:dark;
   --deep:#0b0e12;--panel:#191e25;--panel-low:#12171d;--panel-raised:#262d36;
   --line:#37404b;--control-line:#758396;--ink:#f2f4f3;--muted:#b5bdc6;
@@ -405,8 +407,6 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
 .icon-mining::before,.icon-mining::after{content:"";position:absolute;width:55%;height:42%;border:1.5px solid;border-radius:2px;transform:rotate(-42deg)}
 .icon-mining::after{bottom:0;right:0}
 .icon-activity{background:currentColor;clip-path:polygon(0 53%,23% 53%,39% 7%,60% 73%,71% 45%,100% 45%,100% 57%,78% 57%,59% 100%,39% 36%,30% 65%,0 65%)}
-.icon-settings{background:repeating-linear-gradient(0deg,transparent 0 2px,currentColor 2px 3px,transparent 3px 6px)}
-.icon-settings::after{content:"";position:absolute;width:3px;height:5px;left:3px;top:0;background:currentColor;box-shadow:6px 6px currentColor,1px 12px currentColor}
 .page-head{margin:0 0 1.35rem;padding-bottom:1.3rem;border-bottom:1px solid var(--line)}
 .page-head h2{font-size:clamp(2.1rem,3.35vw,3.4rem);line-height:1.06;letter-spacing:-.055em}
 .page-head p{max-width:60ch;margin-top:.42rem}
@@ -637,7 +637,13 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
     <button type="button" data-view="energy"><i class="nav-icon icon-energy" aria-hidden="true"></i>Energy</button>
     <button type="button" data-view="mining"><i class="nav-icon icon-mining" aria-hidden="true"></i>Mining path</button>
     <button type="button" data-view="activity"><i class="nav-icon icon-activity" aria-hidden="true"></i>Activity</button>
-    <button type="button" data-view="settings"><i class="nav-icon icon-settings" aria-hidden="true"></i>Settings <span id="update-nav-dot" aria-label="Unread network update" hidden>●</span></button>
+    <button type="button" data-view="settings">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true">
+        <path d="M1 3h14M1 8h14M1 13h14" stroke-width="1.5"/>
+        <path d="M5 1.75v2.5M10 6.75v2.5M6 11.75v2.5" stroke-width="2.5"/>
+      </svg>
+      Settings <span id="update-nav-dot" aria-label="Unread network update" hidden>●</span>
+    </button>
   </nav>
   <div class="masthead-actions">
     <div class="connection-status" id="connection-status" hidden>
