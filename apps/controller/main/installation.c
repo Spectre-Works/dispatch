@@ -196,7 +196,7 @@ static const dispatch_quiet_hours default_quiet = {.start_minute = 22 * 60, .end
 typedef struct {
     device_view view;
     uint32_t since, solar_off_since, startup_at, next_command, connection_epoch, observation_day, next_profile;
-    uint32_t next_probe, next_miner;
+    uint32_t next_probe, next_miner, meter_wait_until;
     uint8_t outlet_failures, miner_failures;
     bool startup_tracking;
     uint32_t zero_since, next_destination, destination_at, recovery_requested_at;
@@ -272,7 +272,7 @@ static struct {
     uint32_t fronius_watts, fronius_at;
     bool sampled, attempted, importing, consecutive, fronius_known;
 } grid;
-enum { SOURCE_GRACE_SECONDS = 60 };
+enum { SOURCE_GRACE_SECONDS = 60, METER_RECOVERY_WAIT = 20 };
 static struct {
     int32_t observed, expected, requested;
     uint32_t deadline, next_poll, epoch, at;
@@ -2920,7 +2920,83 @@ void installation_read(installation_view *view)
     unlock();
 }
 
-static void account(unsigned index, const shelly_sample *sample, time_t utc, dispatch_daily_evidence *summary)
+static bool meter_recovery_history(uint64_t from, time_t utc, bool measured, timeline_sample *row)
+{
+    const uint32_t open = utc / TIMELINE_SECONDS;
+    const uint32_t anchor = from / TIMELINE_SECONDS;
+    if (!open) return false;
+    uint32_t bucket = anchor < open ? anchor : open - 1;
+    if (!timeline_sample_read(0, bucket, row)) {
+        if (bucket != anchor || !timeline_sample_read(0, --bucket, row)) return false;
+    }
+    if (row->flags & (TIMELINE_PARTIAL | TIMELINE_ACCOUNTING_GAP | TIMELINE_BRIDGE) || row->replaced_mwh) return false;
+    if (measured) return row->grid_count >= TIMELINE_SECONDS / (2 * GRID_POLL) && row->grid_max <= 0;
+    return !row->grid_count && bucket * TIMELINE_SECONDS >= state.solar_history_from &&
+        row->solar_count >= TIMELINE_SECONDS / (2 * TELEMETRY_SECONDS) && row->solar_min * 10U > state.follow.reserve;
+}
+
+static bool meter_recovery_credit(unsigned index, const shelly_sample *sample, uint32_t now, time_t utc,
+                                  bool continuous, uint64_t *credit)
+{
+    device_runtime *device = &runtime[index];
+    const dispatch_meter_anchor old = state.budget.anchor[index];
+    const bool measured = operating_grid();
+    if (!sample->on || !old.epoch || (uint64_t)utc <= old.epoch || sample->total_mwh <= old.total_mwh ||
+        (!measured && !following_generation())) return true;
+    const uint64_t elapsed = (uint64_t)utc - old.epoch;
+    if (elapsed > DISPATCH_PRORATE_SECONDS ||
+        (continuous && elapsed <= OBSERVATION_TTL && !device->meter_wait_until)) return true;
+
+    timeline_sample row;
+    if (!meter_recovery_history(old.epoch, utc, measured, &row)) return true;
+    const uint32_t historical = measured ? 0 : row.solar_min * 10U - state.follow.reserve;
+    uint32_t draw = 0, historical_draw = 0, channel = 0;
+    bool ready = measured ? grid_fresh(now) : solar_first_fresh(now);
+    for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
+        const association *configured = &state.settings.device[i];
+        const timeline_miner *last = &row.miner[i];
+        if (!configured->shelly.ip[0]) {
+            if (last->identity) return true;
+            continue;
+        }
+        const unsigned on = last->status & (TIMELINE_OUTLET_ON | TIMELINE_OUTLET_OFF);
+        if (last->identity != installation_equipment_identity(configured) || !on || last->paid_mwh ||
+            last->observations < TIMELINE_SECONDS / (2 * POLL_SECONDS) || last->maximum > DISPATCH_METER_CHANNEL_WATTS)
+            return true;
+        historical_draw += last->maximum;
+        const bool fresh_reading = i == index || fresh(&runtime[i], now);
+        if (!fresh_reading && !recently_off(i, now)) {
+            ready = false;
+            continue;
+        }
+        const shelly_sample *current = i == index ? sample : &runtime[i].view.outlet;
+        if (on != (current->on ? TIMELINE_OUTLET_ON : TIMELINE_OUTLET_OFF) ||
+            (current->on && (!current->power_known || current->watts > DISPATCH_METER_CHANNEL_WATTS))) return true;
+        const uint32_t watts = current->on ? (uint32_t)ceil(current->watts) : 0;
+        const uint32_t observed = watts > last->maximum ? watts : last->maximum;
+        draw += observed;
+        if (i == index) channel = observed;
+    }
+    if (!measured && historical < historical_draw) return true;
+    if (!ready) {
+        // Wait for initial observations. During a running session, preserve the
+        // normal allowance and control behavior when current evidence is incomplete.
+        if (!device->meter_wait_until && last_usable_power) return true;
+        if (!device->meter_wait_until) device->meter_wait_until = now + METER_RECOVERY_WAIT;
+        return now >= device->meter_wait_until;
+    }
+    if (!channel || (measured ? grid.watts > 0 :
+        solar.reading.watts < draw + state.follow.reserve || historical < draw)) return true;
+
+    // Estimate the delayed interval only when evidence on both sides covers the same fleet.
+    const uint32_t current = measured ? draw : solar.reading.watts - state.follow.reserve;
+    const uint32_t available = !measured && historical < current ? historical : current;
+    *credit = (uint64_t)available * channel * elapsed * 1000 / (3600ULL * draw);
+    return true;
+}
+
+static void account(unsigned index, const shelly_sample *sample, time_t utc, dispatch_daily_evidence *summary,
+                    uint64_t recovered_solar)
 {
     const uint32_t day = summary->day;
     const uint32_t previous_day = state.budget.day;
@@ -2931,7 +3007,8 @@ static void account(unsigned index, const shelly_sample *sample, time_t utc, dis
     const dispatch_meter_anchor old = state.budget.anchor[index];
     const bool expired = solar_credit.watt_seconds[index] &&
         solar_credit.at - solar_credit.first_credit[index] > DISPATCH_PRORATE_SECONDS;
-    const uint64_t available_solar = expired ? 0 : solar_credit.watt_seconds[index] * 1000ULL / 3600;
+    const uint64_t observed_solar = expired ? 0 : solar_credit.watt_seconds[index] * 1000ULL / 3600;
+    const uint64_t available_solar = recovered_solar > observed_solar ? recovered_solar : observed_solar;
     // Meter counters can report the same total for several polls. Keep
     // capacity for those intervals until the meter actually advances.
     if (expired || !old.epoch || (uint64_t)utc < old.epoch || sample->total_mwh != old.total_mwh)
@@ -2956,7 +3033,7 @@ static void account(unsigned index, const shelly_sample *sample, time_t utc, dis
                 (uint64_t)utc - old.epoch <= OBSERVATION_TTL) miner->reason |= paid_authority;
             telemetry.cost[index] += state.budget.used_nano_cents - previous_cost;
             miner->status |= TIMELINE_METERED;
-            if ((uint64_t)utc - old.epoch > OBSERVATION_TTL && paid) miner->status |= TIMELINE_CATCHUP;
+            if (recovered_solar || ((uint64_t)utc - old.epoch > OBSERVATION_TTL && paid)) miner->status |= TIMELINE_CATCHUP;
             telemetry.observed = true;
         }
         telemetry_budget(day);
@@ -3075,7 +3152,13 @@ static void observation(unsigned index, shelly_result result, const shelly_sampl
     else reset_solar_credit();
     if (day && (result == SHELLY_OK || lost_outlet || lost_miner)) {
         dispatch_daily_evidence *summary = day_evidence(day);
-        if (outlet_update && result == SHELLY_OK && outlet->energy_known) account(index, outlet, utc, summary);
+        if (outlet_update && result == SHELLY_OK && outlet->energy_known) {
+            uint64_t recovered_solar = 0;
+            if (meter_recovery_credit(index, outlet, now, utc, was_fresh && d->observation_day == day, &recovered_solar)) {
+                d->meter_wait_until = 0;
+                account(index, outlet, utc, summary, recovered_solar);
+            }
+        }
         if (outlet_update && result == SHELLY_OK && was_fresh && outlet->on && v->outlet.on && d->observation_day == day) {
             summary->powered_seconds += now - v->outlet_time;
             dirty = true;

@@ -160,6 +160,10 @@ def parity(build, directory):
         result += b"".join(subprocess.check_output((replay, directory / f"sunset-{edition}", stage))
                            for stage in ("sunset", "sunset-restart"))
         result += subprocess.check_output((replay, directory / f"dropout-{edition}", "daylight-dropout"))
+        for condition in ("solar", "low", "missing"):
+            meter = directory / f"meter-{edition}-{condition}"
+            subprocess.run((replay, meter, "meter-checkpoint"), check=True)
+            subprocess.run((replay, meter, "meter-reboot-" + condition), check=True)
         outputs.append(result)
     assert outputs[0] == outputs[1], outputs
     print(outputs[0].decode(), end="", flush=True)

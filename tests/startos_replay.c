@@ -292,10 +292,80 @@ static void daylight_outlet_dropout(void)
     puts("An outlet last confirmed off keeps solar coverage until its evidence expires");
 }
 
+static void checkpoint_solar_meter(void)
+{
+    state.solar = (solar_settings){.ip = "10.241.0.3", .port = 8899};
+    state.follow.reserve = 500;
+    state.settings.policy.rate_millicents_per_kwh = 13900;
+    state.settings.device[0].shelly = (shelly_target){.ip = "10.241.0.1", .identity = "shellyplusplugsus-000000000001"};
+    state.settings.device[1].shelly = (shelly_target){.ip = "10.241.0.2", .identity = "shellyplusplugsus-000000000002"};
+    elapsed = 420;
+    const shelly_sample spare = {.power_known = true, .energy_known = true, .total_mwh = 1000};
+    observation(1, SHELLY_OK, &spare, NULL, true, elapsed);
+    sample(elapsed, 733, 1000000);
+    assert(save() == ESP_OK);
+    timeline_sample row = {.solar_min = 284, .solar_max = 287, .solar_count = 30, .grid_decawatts = TIMELINE_UNKNOWN_GRID};
+    row.miner[0] = (timeline_miner){.identity = installation_equipment_identity(&state.settings.device[0]),
+        .maximum = 736, .observations = 60, .status = TIMELINE_OUTLET_ON};
+    row.miner[1] = (timeline_miner){.identity = installation_equipment_identity(&state.settings.device[1]),
+        .observations = 60, .status = TIMELINE_OUTLET_OFF};
+    timeline_sample_write(replay_clock() / TIMELINE_SECONDS, &row);
+}
+
+static void reconcile_solar_meter(const char *scenario)
+{
+    const uint32_t resumed = 672;
+    const uint64_t counter = 1051986;
+    const shelly_sample spare = {.power_known = true, .energy_known = true, .total_mwh = 1000};
+    assert(state.budget.anchor[0].epoch == (uint64_t)epoch + 420);
+    sample(resumed, 734, counter);
+    assert(state.budget.anchor[0].total_mwh == 1000000 && runtime[0].meter_wait_until);
+    assert(!state.budget.used_nano_cents);
+    observation(1, SHELLY_OK, &spare, NULL, true, elapsed);
+
+    const bool missing = !strcmp(scenario, "meter-reboot-missing");
+    const bool covered = !strcmp(scenario, "meter-reboot-solar");
+    if (!missing) {
+        solar.result = ECU_OK;
+        solar.sampled = true;
+        solar.epoch = network_epoch();
+        solar.at = solar.progress_at = elapsed;
+        solar.reading.online = 1;
+        solar.reading.watts = covered ? 2715 : 1000;
+    }
+    if (missing) {
+        sample(resumed + METER_RECOVERY_WAIT - 1, 734, counter);
+        assert(state.budget.anchor[0].total_mwh == 1000000);
+    }
+    sample(resumed + (missing ? METER_RECOVERY_WAIT : 5), 734, counter);
+    assert(state.budget.anchor[0].total_mwh == counter && !runtime[0].meter_wait_until);
+    assert(telemetry_miner(0)->status & TIMELINE_CATCHUP);
+    const uint64_t solar_mwh = state.solar_days[state.budget.day % DISPATCH_EVIDENCE_DAYS].energy_mwh;
+    if (covered) {
+        assert(solar_mwh == counter - 1000000);
+        assert(!state.budget.used_nano_cents && !telemetry_miner(0)->paid_mwh);
+        sample(elapsed + 5, 734, counter + 1019);
+        assert(!state.budget.used_nano_cents);
+    } else {
+        const uint64_t observed_solar = missing ? 0 : 500 * 5 * 1000 / 3600;
+        assert(solar_mwh == observed_solar);
+        const uint64_t paid = counter - 1000000 - observed_solar;
+        assert(state.budget.used_nano_cents == paid * 13900 && telemetry_miner(0)->paid_mwh == paid);
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3 || !preview_storage_open(argv[1])) return 1;
     installation_start();
+    if (!strcmp(argv[2], "meter-checkpoint")) {
+        checkpoint_solar_meter();
+        return 0;
+    }
+    if (!strncmp(argv[2], "meter-reboot-", 13)) {
+        reconcile_solar_meter(argv[2]);
+        return 0;
+    }
     if (!strcmp(argv[2], "daylight-dropout")) {
         daylight_outlet_dropout();
         return 0;

@@ -61,7 +61,30 @@ async function check() {
     assert.equal(JSON.stringify(plan).includes('fixturepass'), false);
     assert.equal(JSON.stringify(plan).includes('owner'), false);
     await page.getByRole('button', { name: 'Activity', exact: true }).click();
-    await page.getByText('Owner cleared electricity accounting and daily reports', { exact: false }).first().waitFor();
+    await page.locator('#events').getByText(/Owner cleared electricity accounting/).waitFor();
+    await page.waitForFunction(() => activityData?.range === activityRange && activityPoints().length >= 3);
+    const scrub = page.locator('#activity-scrub');
+    const explore = index => scrub.evaluate((slider, value) => {
+      slider.value = value;
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+    }, index);
+    // Inject boundary timestamps into the loaded history to exercise the real slider and card.
+    await page.evaluate(() => {
+      const points = activityPoints();
+      activityData.events = [
+        { at: points[0].at, label: 'At selected start', slot: 8, id: 0, lane: 'bridge' },
+        { at: points[1].at, label: 'At selected end', slot: 8, id: 0, lane: 'bridge' },
+      ];
+    });
+    const selectedEvents = page.locator('#activity-events li');
+    await explore(0);
+    assert.equal(await selectedEvents.count(), 1);
+    assert.match(await selectedEvents.first().textContent(), /At selected start/);
+    await explore(1);
+    assert.equal(await selectedEvents.count(), 1);
+    assert.match(await selectedEvents.first().textContent(), /At selected end/);
+    await explore(2);
+    assert.equal(await selectedEvents.count(), 0);
     const clear = page.getByRole('button', { name: 'Clear activity history' });
     const canceled = page.waitForEvent('dialog');
     const firstClick = clear.click();

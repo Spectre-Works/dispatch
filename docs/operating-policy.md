@@ -101,5 +101,10 @@ The on-device history uses the same decision reasons as the live dashboard.
 A five-minute record can include the reason for operation at interval close
 and the paid permissions seen alongside fresh energy readings during that
 interval. Delayed meter readings can contribute energy totals without
-assigning that energy to a permission. A replay estimates behavior from
+assigning that energy to a permission. After a reboot or missed outlet
+readings, DISPATCH can estimate solar coverage across up to five minutes of
+delayed meter energy. It requires a nearby saved interval and fresh readings
+showing enough on-site power for the same outlet loads on both sides. If the
+saved readings qualify, startup accounting can wait up to 20 seconds for the
+energy source and outlets to report again. A replay estimates behavior from
 these averages and cannot reproduce changes within each bucket.

@@ -3205,7 +3205,7 @@ function inspectActivity(points = activityPoints()) {
   const events = activityVisibleEvents();
   el('activity-more-events').hidden = !activityData?.older || activityData.range !== activityRange;
   const exact = point ? events.filter(event => event.at >= point.at && event.at < end) : [];
-  const rows = (exact.length ? exact : events.slice(-4)).slice(-12).reverse().map(event => {
+  const rows = exact.slice(-12).reverse().map(event => {
     const row = entry('li', '');
     const button = entry('button', activityEventTime(event.at, true));
     button.type = 'button';
