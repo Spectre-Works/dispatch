@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
+# SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
+[start_cli]
+version = "2.8.0"
+repository = "https://github.com/Start9Labs/start-technologies"
+x86_64 = "05a9a1c00207fb83c5d36eeb801655d5e02272a5a01c34d3588982c39fbca689"
+aarch64 = "9ad5b64283dc5d77cdc691738d86a78205442b09026841fe51a487974a197b63"
+
+[http_parser]
+base = "https://raw.githubusercontent.com/espressif/esp-idf/051e4c4eb20346e043cdd47bc388fde75ff8af63/components/http_parser"
+"http_parser.c" = "c164edcb06099b026e7ed853ed4d25536e83b4463d5e79921b28621e16588455"
+"http_parser.h" = "21fcfe834198349472a878e0334dd74b8571fafc70c6dd701169f525dd463041"
+"LICENSE.txt" = "3aced2d086d3f59cafb6589770c30c1e45a5bdf50c1d4375060b81a615db604c"
+
+[notices."libevent.LICENSE"]
+url = "https://raw.githubusercontent.com/libevent/libevent/release-2.1.13-stable/LICENSE"
+sha256 = "ff02effc9b331edcdac387d198691bfa3e575e7d244ad10cb826aa51ef085670"
+
+[notices."openssl.LICENSE.txt"]
+url = "https://raw.githubusercontent.com/openssl/openssl/openssl-3.5.9/LICENSE.txt"
+sha256 = "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a"
+
+[notices."zlib.LICENSE"]
+url = "https://raw.githubusercontent.com/madler/zlib/v1.4/LICENSE"
+sha256 = "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
+
+[notices."musl.COPYRIGHT"]
+url = "https://git.musl-libc.org/cgit/musl/plain/COPYRIGHT?h=v1.2.5"
+sha256 = "f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af"
+
+[notices."gcc.COPYING3"]
+url = "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-14.2.0/COPYING3"
+sha256 = "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+
+[notices."gcc.COPYING.RUNTIME"]
+url = "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-14.2.0/COPYING.RUNTIME"
+sha256 = "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74"

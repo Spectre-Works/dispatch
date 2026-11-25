@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
 // SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
 #include "mqtt_wire.h"
+#include "equipment_writes.h"
 
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -235,6 +236,13 @@ shelly_result mqtt_subscribe(mqtt_wire *wire, const char *const topics[], unsign
 bool mqtt_publish(mqtt_wire *wire, const char *topic, const char *payload)
 {
     if (strlen(topic) > 61 || strlen(payload) > 24) return false;
+    if (!equipment_writes_allowed()) {
+        if (strncmp(topic, "cmnd/", 5)) return false;
+        const char *device = topic + 5;
+        const size_t length = strspn(device, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-");
+        if (!length || length > 21 || strcmp(device + length, "/Status") ||
+            (strcmp(payload, "5") && strcmp(payload, "10") && strcmp(payload, "11"))) return false;
+    }
     unsigned char body[2 + 61 + 24];
     unsigned char *end = field(body, topic);
     size_t size = strlen(payload);

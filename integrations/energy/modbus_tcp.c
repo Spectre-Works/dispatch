@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
 // SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
+#include "equipment_writes.h"
 #include "modbus_tcp.h"
 
 #include "local_tcp.h"
@@ -92,5 +93,6 @@ shelly_result modbus_read(const char *ip, uint16_t port, uint8_t unit, uint16_t 
 shelly_result modbus_write(const char *ip, uint16_t port, uint8_t unit, uint16_t address,
                            const uint16_t words[], unsigned count, int64_t deadline)
 {
+    if (!equipment_writes_allowed()) return SHELLY_DEFERRED;
     return exchange(ip, port, unit, address, NULL, words, count, deadline);
 }

@@ -2,6 +2,7 @@
   "operative_application_identifier": "LicenseRef-Spectre-Dispatch-1.0",
   "application_paths": [
     "apps/controller/**",
+    "apps/startos/**",
     "apps/web/**",
     "core/**",
     "integrations/**",

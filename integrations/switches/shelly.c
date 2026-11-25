@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
 // SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
+#include "equipment_writes.h"
 #include "shelly.h"
 #include "integration_profile.h"
 
@@ -445,6 +446,7 @@ static shelly_result rpc_set(const shelly_target *target, unsigned channel, bool
 
 shelly_result shelly_set_channel(const shelly_target *target, unsigned channel, bool on, bool (*still_allowed)(void))
 {
+    if (!equipment_writes_allowed()) return SHELLY_DEFERRED;
     if (!shelly_valid_relay_channel(target->identity, channel)) return SHELLY_PROTOCOL;
     return gen1_lookup(target->identity) ? gen1_set(target, channel, on, 0, still_allowed) :
         rpc_set(target, channel, on, 0, still_allowed);
@@ -453,6 +455,7 @@ shelly_result shelly_set_channel(const shelly_target *target, unsigned channel, 
 shelly_result shelly_timed_on_channel(const shelly_target *target, unsigned channel, unsigned seconds,
                                      bool (*still_allowed)(void))
 {
+    if (!equipment_writes_allowed()) return SHELLY_DEFERRED;
     if (!seconds || seconds > 240 || !shelly_valid_relay_channel(target->identity, channel)) return SHELLY_PROTOCOL;
     if (gen1_lookup(target->identity)) return gen1_set(target, channel, true, seconds, still_allowed);
     shelly_sample current;

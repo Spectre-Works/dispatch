@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
 // SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
+#include "equipment_writes.h"
 #include "goldshell_mode.h"
 #include "cgminer.h"
 
@@ -449,6 +450,7 @@ goldshell_mode_reading goldshell_mode_authorize(const char *ip, const char *pass
 goldshell_mode_reading goldshell_mode_change(const char *ip, const char *password,
     const goldshell_mode_reading *expected, goldshell_mode desired, bool (*allowed)(void))
 {
+    if (!equipment_writes_allowed()) return (goldshell_mode_reading){.status = GOLDSHELL_MODE_DEFERRED};
     goldshell_mode_reading detected = {0};
     const mode_profile *profile = identify(ip, &detected);
     if (!profile) return detected;
@@ -510,6 +512,7 @@ goldshell_mode_reading goldshell_mode_change(const char *ip, const char *passwor
 goldshell_mode_status goldshell_restart(const char *ip, const char *password,
     const goldshell_mode_reading *expected, bool (*allowed)(void))
 {
+    if (!equipment_writes_allowed()) return GOLDSHELL_MODE_DEFERRED;
     const goldshell_mode_reading current = goldshell_restart_inspect(ip);
     if (current.status != GOLDSHELL_MODE_READY) return current.status;
     if (!expected->restart_supported || strcmp(current.advertised_model, expected->advertised_model) ||

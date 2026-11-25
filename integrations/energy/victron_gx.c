@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
 // SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
+#include "equipment_writes.h"
 #include "victron_gx.h"
 #include "integration_profile.h"
 
@@ -76,6 +77,7 @@ shelly_result victron_setpoint(const char *ip, int32_t *watts)
 shelly_result victron_set_grid_target(const char *ip, int32_t expected, int32_t watts,
                                       bool (*allowed)(void))
 {
+    if (!equipment_writes_allowed()) return SHELLY_DEFERRED;
     if (watts < -VICTRON_TARGET_MAX || watts > VICTRON_TARGET_MAX) return SHELLY_PROTOCOL;
     const int64_t deadline = esp_timer_get_time() + 1100000;
     uint16_t mode, dynamic;

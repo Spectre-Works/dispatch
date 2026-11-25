@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
 // SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
 #include "installation.h"
+#include "equipment_writes.h"
 #include "discovery.h"
 #include "network.h"
 #include "network_update.h"
@@ -619,6 +620,7 @@ static esp_err_t status_page(httpd_req_t *request)
         snapshot.settings.policy.rate_millicents_per_kwh / 1000.0,
         snapshot.settings.policy.daily_allowance_millicents / 1000.0,
         snapshot.settings.utc_offset_minutes, snapshot.timezone);
+    if (!equipment_writes_allowed()) add(request, "\"edition\":\"startos-preview\",");
     add(request, "\"quietEnabled\":%s,\"quietActive\":%s,\"quietStart\":%u,\"quietEnd\":%u,",
         truth(snapshot.quiet.enabled), truth(snapshot.quiet_active),
         snapshot.quiet.start_minute, snapshot.quiet.end_minute);
@@ -670,7 +672,9 @@ static esp_err_t status_page(httpd_req_t *request)
         snapshot.mqtt_ip, snapshot.mqtt_port, snapshot.mqtt_tls_name,
         truth(snapshot.mqtt_probe_pending), truth(snapshot.mqtt_probe_attempted),
         (unsigned)snapshot.mqtt_probe_result, truth(snapshot.mqtt_probe_on));
-    add(request, "\"resources\":{\"uptime\":%u,\"free\":%u,\"minimum\":%u,\"largest\":%u,"
+    if (!equipment_writes_allowed()) {
+        add(request, "\"resources\":{\"uptime\":%u},\"devices\":[", (unsigned)snapshot.now);
+    } else add(request, "\"resources\":{\"uptime\":%u,\"free\":%u,\"minimum\":%u,\"largest\":%u,"
         "\"lowestBrowserLargest\":%u,\"webStack\":%u,\"workerStack\":%u},\"devices\":[",
         (unsigned)snapshot.now, (unsigned)heap_caps_get_free_size(caps),
         (unsigned)heap_caps_get_minimum_free_size(caps), (unsigned)largest, (unsigned)lowest_largest,
@@ -1702,6 +1706,9 @@ static esp_err_t update(httpd_req_t *request)
     }
     if (result == ESP_ERR_INVALID_ARG) {
         return reply(request, "400 Bad Request", error);
+    }
+    if (!equipment_writes_allowed() && result == ESP_ERR_NOT_SUPPORTED) {
+        return reply(request, "403 Forbidden", "This action is unavailable in DISPATCH Preview for StartOS.");
     }
     if (result == ESP_ERR_INVALID_STATE) {
         return reply(request, "409 Conflict", conflict);

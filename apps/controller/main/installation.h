@@ -277,6 +277,9 @@ typedef struct {
 
 void installation_start(void);
 bool installation_boot_healthy(void);
+#ifdef DISPATCH_PREVIEW_ONLY
+void installation_checkpoint(void);
+#endif
 void installation_read(installation_view *view);
 uint16_t installation_equipment_identity(const association *device);
 esp_err_t installation_power_test(unsigned slot, uint16_t identity, bool start, const char **conflict);

@@ -26,6 +26,10 @@ flash the firmware, join Wi-Fi, and see what DISPATCH would do in Preview.
 - **See what happened.** Activity shows power readings, relay and preset
   changes, the reason miners ran or waited, and estimated paid energy and cost.
 
+**DISPATCH Preview for StartOS** uses live LAN equipment to preview this
+operating plan. Export the plan for DISPATCH/01 when you are ready to use
+a controller. [Install Preview on StartOS](docs/startos.md)
+
 [Compatibility](docs/compatibility.md) · [Operating policy](docs/operating-policy.md)
 
 ## Work on the repository

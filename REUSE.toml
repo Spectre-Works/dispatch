@@ -6,6 +6,7 @@ SPDX-PackageSupplier = "Organization: SPECTRE WORKS LLC"
 [[annotations]]
 path = [
   "apps/controller/**",
+  "apps/startos/**",
   "apps/web/**",
   "core/**",
   "integrations/**",

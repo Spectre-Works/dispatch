@@ -6,6 +6,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SPECTRE WORKS DISPATCH/01</title>
 <style>
+[data-edition="startos"] [data-atom-only],
+html:not([data-edition="startos"]) [data-startos-only]{display:none!important}
 :root{
   color-scheme:dark;
   --deep:#0b0e12;--panel:#191e25;--panel-low:#12171d;--panel-raised:#262d36;
@@ -658,22 +660,25 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
 <form id="login" autocomplete="off">
   <section class="access-panel">
     <div class="access-intro">
-      <div class="eyebrow">DISPATCH/01 Controller</div>
-      <h2>Local mining<br>automation</h2>
+      <div class="eyebrow" data-atom-only>DISPATCH/01 Controller</div>
+      <div class="eyebrow" data-startos-only>DISPATCH Preview for StartOS</div>
+      <h2 data-atom-only>Local mining<br>automation</h2>
+      <h2 data-startos-only>Preview your<br>operating plan</h2>
       <p class="muted">Coordinate outlet power with mining hours, energy availability, and your daily allowance.</p>
-      <div class="access-path" aria-label="Operating sequence"><span>Observe</span><span>Preview</span><span>Control</span></div>
+      <div class="access-path" aria-label="Operating sequence"><span>Observe</span><span>Preview</span><span data-atom-only>Control</span></div>
     </div>
     <div class="access-fields">
-      <h3>Unlock controller</h3>
-      <label for="owner-key">Owner or setup key</label>
+      <h3>Unlock DISPATCH</h3>
+      <label for="owner-key"><span data-atom-only>Owner or setup key</span><span data-startos-only>Owner key</span></label>
       <input id="owner-key" name="key" type="password" required pattern="[a-f0-9]{32}|[0-9]{12}" maxlength="32"
         spellcheck="false" aria-describedby="key-help">
       <p class="muted" id="key-help">Use the dashboard on a trusted local network.</p>
       <label class="check-label"><input name="remember" type="checkbox">Remember this browser</label>
+      <p class="muted" data-startos-only>In StartOS, open DISPATCH Preview → Actions → Show Owner Key.</p>
       <button class="primary" id="unlock">Unlock</button>
       <p id="message" role="status"></p>
-      <details class="key-note"><summary>Which key do I use?</summary><p>Use the 12-digit setup key while joined to the temporary DISPATCH Wi-Fi. On your home network, use the 32-character owner key from USB pairing. The owner key has no expiry.</p></details>
-      <details class="key-note"><summary>Lost your owner key?</summary><p>Hold the controller’s front button during power-up and run USB pairing again. Use the existing key file to keep your key, or a new key file to replace a lost key.</p></details>
+      <details class="key-note" data-atom-only><summary>Which key do I use?</summary><p>Use the 12-digit setup key while joined to the temporary DISPATCH Wi-Fi. On your home network, use the 32-character owner key from USB pairing. The owner key has no expiry.</p></details>
+      <details class="key-note" data-atom-only><summary>Lost your owner key?</summary><p>Hold the controller’s front button during power-up and run USB pairing again. Use the existing key file to keep your key, or a new key file to replace a lost key.</p></details>
     </div>
   </section>
 </form>
@@ -790,7 +795,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
         <button type="button" class="subtle" data-view="activity">View power history</button>
       </section>
       <section id="attention">
-        <div class="section-head"><h3>Needs attention</h3><button type="button" id="open-notifications" class="subtle">Notifications</button></div>
+        <div class="section-head"><h3>Needs attention</h3><button type="button" id="open-notifications" class="subtle" data-atom-only>Notifications</button></div>
         <p id="attention-summary" class="muted" tabindex="-1"></p>
         <ul class="operator-list" id="attention-list"></ul>
       </section>
@@ -874,8 +879,8 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
       <summary>Victron ESS grid target</summary>
       <form id="gx-form">
         <p id="gx-current" class="muted"></p>
-        <label>Requested target (W)<input name="watts" type="number" min="-10000" max="10000" step="1" required></label>
-        <button type="submit" class="primary">Apply grid target</button>
+        <label data-atom-only>Requested target (W)<input name="watts" type="number" min="-10000" max="10000" step="1" required></label>
+        <button type="submit" data-atom-only class="primary">Apply grid target</button>
         <p id="gx-message" role="status"></p>
       </form>
     </details>
@@ -999,8 +1004,8 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
       <button type="button" data-settings="energy-sources-settings">Energy sources</button>
       <button type="button" data-settings="connection-settings">Connections</button>
       <button type="button" data-settings="clock-settings">Clock</button>
-      <button type="button" data-settings="notification-settings">Notifications</button>
-      <button type="button" data-settings="network-update-settings">Network Update <span id="update-settings-dot" aria-label="Unread network update" hidden>●</span></button>
+      <button type="button" data-settings="notification-settings" data-atom-only>Notifications</button>
+      <button type="button" data-settings="network-update-settings"><span data-atom-only>Network Update</span><span data-startos-only>Service version</span> <span id="update-settings-dot" aria-label="Unread network update" hidden>●</span></button>
       <button type="button" data-settings="profile-settings">Integration profiles</button>
       <button type="button" data-settings="transfer-settings">Transfer</button>
     </nav>
@@ -1012,7 +1017,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
       </nav>
     <form id="config" autocomplete="off">
       <div data-setup-page="pair">
-      <fieldset class="discovery">
+      <fieldset class="discovery" data-atom-only>
         <legend>Shelly discovery</legend>
         <div class="row">
           <p id="discovery-status" class="muted" role="status">Looking for Shelly outlets…</p>
@@ -1334,9 +1339,9 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
       </details>
     </section>
     <section id="clock-settings" hidden>
-      <div class="section-head"><h3>Controller clock</h3><button type="button" id="time-retry">Retry synchronization</button></div>
+      <div class="section-head"><h3>Installation clock</h3><button type="button" data-atom-only id="time-retry">Retry synchronization</button></div>
       <p id="time-status" class="muted"></p>
-      <form id="time-form">
+      <form id="time-form" data-atom-only>
         <div class="row">
           <label>Preferred NTP server<input name="ntp" maxlength="63" placeholder="Automatic if blank"></label>
           <label class="check-label"><input name="localOnly" type="checkbox">Use only the preferred server</label>
@@ -1369,7 +1374,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
     </section>
     <section id="network-update-settings" hidden>
       <h3>Network Update</h3>
-      <p class="muted">The controller checks for releases when enabled. Installation starts after you approve it and ends with a restart.</p>
+      <p class="muted" data-atom-only>The controller checks for releases when enabled. Installation starts after you approve it and ends with a restart.</p>
       <p id="update-installed"></p>
       <p id="update-status" role="status"></p>
       <div class="row">
@@ -1383,7 +1388,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
     </section>
     <section id="profile-settings" hidden>
       <div class="section-head"><h3>Integration profiles</h3></div>
-      <p class="muted">Choose a profile from dispatch-sdk. Restart the controller after saving to apply the change.</p>
+      <p class="muted">Choose a profile from dispatch-sdk. Restart DISPATCH after saving to apply the change.</p>
       <div class="row"><button type="button" id="choose-profile">Choose profile</button></div>
       <input id="profile-file" type="file" accept=".dispatch-profile,.json,application/json" hidden>
       <p id="profile-message" role="status"></p>
@@ -1513,6 +1518,8 @@ try { localStorage.removeItem('dispatch.ownerKey'); } catch { /* Storage may be 
 let key = '', state, busy = false, background = null;
 let lastStatusAt = 0, statusReadFailed = false, firstRunExpanded = false;
 const statusStaleAfter = 15000;
+const startosPreview = document.documentElement.dataset.edition === 'startos';
+if (startosPreview) document.title = 'DISPATCH Preview for StartOS';
 let zones, scanRequested = false, scanWatching = false, scanStarted = false;
 const commissioning = new URLSearchParams(location.hash.slice(1));
 if (location.hash) history.replaceState(null, '', location.pathname);
@@ -1702,7 +1709,7 @@ function renderPowerTest() {
 }
 
 function openPowerTest(slot) {
-  if (!state?.devices[slot]?.powerTest) return;
+  if (startosPreview || !state?.devices[slot]?.powerTest) return;
   powerTestSlot = slot;
   el('power-test-agree').checked = false;
   el('power-test-message').textContent = '';
@@ -1846,7 +1853,7 @@ function renderFirstRun() {
       summary = 'Mapping confirmed. Choose an operating goal to see what DISPATCH would do.';
     } else if (!run.power) {
       summary = state.enabled ? d.reason + (d.timedTest ? ' You can run a timed test for this outlet.' : ' Enter a startup estimate in Energy.') :
-        'Waiting for a powered reading. Review the Preview decision before enabling control.';
+        (startosPreview ? 'Waiting for a powered reading from the outlet.' : 'Waiting for a powered reading. Review the Preview decision before enabling control.');
     } else if (!d.minerIp) {
       summary = 'Powered outlet observed. Add cgminer if you want miner-reported hashrate evidence.';
     } else if (!run.work) {
@@ -1874,13 +1881,13 @@ function renderFirstRun() {
 
 function setupStage(devices, pending) {
   if (!devices.length) return ['pair', 'Pair your first outlet',
-    'Add the Shelly to your home network, then select it here.', 'Pair equipment'];
+    startosPreview ? 'Enter the outlet address and device ID.' : 'Add the Shelly to your home network, then select it here.', 'Pair equipment'];
   if (pending.some(({d}) => !d.firstRun?.mapping)) return ['mapping', 'Confirm what the outlet powers',
     'Trace the power cable from each outlet to its miner and confirm the pairing.', 'Confirm equipment'];
   if (state.planReady === false) return ['plan', 'Choose an operating goal',
     'Set when the installation can run and how much it can spend.', 'Choose operating goal'];
   if (pending.length && !state.enabled) return ['preview', 'Review the first run in Preview',
-    'Check the proposed action for each outlet before enabling control.', 'Review outlet actions'];
+    startosPreview ? 'Review the proposed actions, then export your plan to use on DISPATCH/01.' : 'Check the proposed action for each outlet before enabling control.', 'Review outlet actions'];
   if (pending.length) return ['watch', 'Watch the first run',
     (devices.length - pending.length) + ' of ' + devices.length + ' pairings have completed the first-run checks.',
     'See first-run checks'];
@@ -2090,7 +2097,7 @@ function equipmentCard(d, i) {
   rename.setAttribute('aria-label', 'Name equipment for ' + deviceLabel(i));
   rename.onclick = () => openEquipmentName(i);
   controls.append(equipmentButton(i), rename, coordination);
-  if (d.powerTest && (d.outlet === false || d.powerTest.phase || d.powerTest.measuredPeak)) {
+  if (!startosPreview && d.powerTest && (d.outlet === false || d.powerTest.phase || d.powerTest.measuredPeak)) {
     const test = entry('button', powerTestActive(d) || d.powerTest.measuredPeak ? 'View power test' : 'First-run power test', 'subtle');
     test.type = 'button';
     test.setAttribute('aria-label', 'First-run power test for ' + deviceLabel(i));
@@ -2457,8 +2464,8 @@ function renderHomeAction() {
   const action = el('home-action-form'), number = action.elements.number, option = action.elements.option;
   action.hidden = !home.actuator;
   const domain = home.actuator?.split('.')[0];
-  el('home-number-field').hidden = domain !== 'number';
-  el('home-option-field').hidden = domain !== 'select';
+  el('home-number-field').hidden = startosPreview || domain !== 'number';
+  el('home-option-field').hidden = startosPreview || domain !== 'select';
   number.required = domain === 'number' && home.known;
   if (home.known && domain === 'number') {
     number.min = home.min;
@@ -2478,7 +2485,8 @@ function renderHomeAction() {
   el('home-current').textContent = home.actuator ? home.actuator + ' · ' + observed + (status ? ' · ' + status : '') : '';
   const button = action.querySelector('button');
   button.textContent = domain === 'button' ? 'Press restart button' : 'Apply Home Assistant action';
-  button.disabled = !home.known || state.paused || home.command === 1 || home.command === 2;
+  button.hidden = startosPreview;
+  button.disabled = startosPreview || !home.known || state.paused || home.command === 1 || home.command === 2;
 }
 
 function fillEnergyForms(saved) {
@@ -2540,7 +2548,7 @@ function openStep(name) {
 }
 
 function requestSetupData() {
-  if (step === 'pair' && !scanStarted) {
+  if (!startosPreview && step === 'pair' && !scanStarted) {
     scanStarted = true;
     scanRequested = true;
   }
@@ -3482,7 +3490,7 @@ function chooseActivityAt(event) {
 function fillAssociation() {
   if (!state || state.setup) return;
   const f = el('config').elements, d = state.devices[f.index.value];
-  el('pair-feedback').textContent = d.ip ? 'Editing ' + deviceLabel(Number(f.index.value)) + '. Saved outlet: ' + d.outletStatus + '.' : 'Select a discovered Shelly or enter its address and device ID.';
+  el('pair-feedback').textContent = d.ip ? 'Editing ' + deviceLabel(Number(f.index.value)) + '. Saved outlet: ' + d.outletStatus + '.' : (startosPreview ? 'Enter the LAN address and device ID.' : 'Select a discovered Shelly or enter its address and device ID.');
   f.ip.value = d.ip;
   f.identity.value = d.identity;
   f.miner.value = d.minerIp;
@@ -3884,7 +3892,7 @@ function paint(next) {
   const clockHeading = !presentTime.synchronized ? 'Waiting for the clock' :
     state.localDay ? 'Aligning the budget date' : 'Check the time zone';
   const timeProblem = !presentTime.synchronized
-    ? (presentTime.syncAge == null ? 'No NTP time has been received since startup.' : 'The last NTP reading is stale or invalid.')
+    ? (startosPreview ? 'Check the system clock in StartOS.' : presentTime.syncAge == null ? 'No NTP time has been received since startup.' : 'The last NTP reading is stale or invalid.')
     : (state.localDay ? 'DISPATCH is carrying recorded spending forward for the local date, ' + dayLabel(state.localDay) + '.' :
        'Time is synchronized. Check the time zone in the operating plan.');
   const budgetBlocked = state.allowance && state.meterGap && !state.complete;
@@ -3904,7 +3912,8 @@ function paint(next) {
     ? 'Resume from the latest meter readings and keep recorded spending. Usage during the gap remains unknown.'
     : state.today?.gapAccepted ? 'Accounting resumed after a meter gap. Today’s totals reflect recorded usage.' :
       'Clearing resets the daily spending balance and deletes the saved daily reports.';
-  el('time-status').textContent = presentTime.synchronized
+  el('time-status').textContent = startosPreview ?
+    (presentTime.synchronized ? 'Using the StartOS system clock.' : 'Waiting for a valid StartOS system clock.') : presentTime.synchronized
     ? 'Synchronized · last NTP update ' + duration(presentTime.syncAge) + ' ago.'
     : timeProblem;
   el('guidance').textContent = state.storageError ? 'Switching is suspended until settings can be saved.' :
@@ -3937,7 +3946,7 @@ function paint(next) {
   const mapped = paired.some(d => hasMapping(d));
   el('overview-budget').hidden = !paired.length;
   el('overview-stats').hidden = !paired.length;
-  el('control').hidden = (!mapped || state.planReady === false) && !state.enabled;
+  el('control').hidden = startosPreview || ((!mapped || state.planReady === false) && !state.enabled);
   el('pause-menu').hidden = !mapped || state.paused;
   el('pause-help').textContent = state.enabled ?
     'Requests that paired outlets turn off for the selected duration.' :
@@ -5100,11 +5109,11 @@ function renderPowerMode() {
       'Evaluate both modes to unlock the measured efficiency preset. Adapt can lower draw to fit solar or reduce paid draw.' :
       'Adapt can lower draw during a sustained power shortfall. The measured efficiency preset uses the mode that used less energy per terahash.';
   }
-  el('power-mode-form').hidden = stale || !verified || !mode.current || (!target && !secondary) || !eligible || !!checking || !!managed;
+  el('power-mode-form').hidden = startosPreview || stale || !verified || !mode.current || (!target && !secondary) || !eligible || !!checking || !!managed;
   el('managed-presets').hidden = !device?.presetEfficiency;
   el('preset-authorization-form').hidden = stale || !control.eligible || !!control.authorized || !!checking;
   el('revoke-presets').hidden = stale || !control.authorized;
-  el('evaluate-presets').hidden = stale || !control.authorized || !control.eligible || !eligible || !!checking ||
+  el('evaluate-presets').hidden = startosPreview || stale || !control.authorized || !control.eligible || !eligible || !!checking ||
     !!control.evaluating || !!choice || device?.presetEfficiency?.comparison !== 0 ||
     state.devices.some(d => d.presetControl?.evaluating);
   el('cancel-preset-evaluation').hidden = stale || !control.evaluating || control.restoring;
@@ -5117,7 +5126,7 @@ function renderPowerMode() {
     'Authorization lets the controller switch presets while it stays on. Reauthorize after a controller restart.';
   if (el('preset-authorization-status').textContent !== authorization) el('preset-authorization-status').textContent = authorization;
   const restart = device?.restart || {}, restartForm = el('miner-restart-form');
-  restartForm.hidden = !restart.supported && !restart.command;
+  restartForm.hidden = startosPreview || (!restart.supported && !restart.command);
   restartForm.querySelector('button').disabled = stale || !restart.ready || restart.command === 1 || restart.command === 2;
   el('miner-restart-status').textContent = restart.command === 3 ? 'A new mining process was observed.' :
     restart.command === 4 && restart.result === 4 ? 'The miner rejected authentication.' :
@@ -5330,7 +5339,7 @@ function renderNetworkUpdate() {
     'The release manifest failed verification.', 'The firmware image failed verification.',
     'The controller could not stage or activate the update.', 'The controller ran out of memory for the update.',
     'The previous update failed its trial boot. The controller restored the earlier firmware.'];
-  const message = !update.supported ? 'Use USB to update this build. Network Update requires an update-enabled build and the current partition layout.' :
+  const message = startosPreview ? 'Use StartOS to update or reinstall this service.' : !update.supported ? 'Use USB to update this build. Network Update requires an update-enabled build and the current partition layout.' :
     !update.enabled ? 'Release checks are off.' : phases[update.phase] ||
     (waitingForClock ? 'Waiting for the controller clock to synchronize. See Settings → Clock.' :
       results[update.result] || 'Ready to check.');
@@ -5381,7 +5390,7 @@ el('notification-off').onclick = async () => {
 };
 el('clock-shortcut').onclick = () => {
   jumpTo('settings', 'clock-settings');
-  el('time-form').elements.ntp.focus();
+  if (!startosPreview) el('time-form').elements.ntp.focus();
 };
 el('time-retry').onclick = async () => {
   if (await change('action', {mode:'time-retry'}, 'time-message')) {

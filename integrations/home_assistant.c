@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
 // SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
+#include "equipment_writes.h"
 #include "home_assistant.h"
 
 #include "esp_timer.h"
@@ -131,6 +132,7 @@ shelly_result ha_switch_status(const ha_endpoint *endpoint, const char *entity, 
 
 shelly_result ha_switch_set(const ha_endpoint *endpoint, const char *entity, bool on, bool (*still_allowed)(void))
 {
+    if (!equipment_writes_allowed()) return SHELLY_DEFERRED;
     const int64_t deadline = esp_timer_get_time() + 1100000;
     bool observed_on;
     const shelly_result result = read_switch(endpoint, entity, &observed_on, deadline);
@@ -296,6 +298,7 @@ shelly_result ha_control_read(const ha_endpoint *endpoint, const char *entity, h
 shelly_result ha_number_set(const ha_endpoint *endpoint, const char *entity, double value,
                             bool (*still_allowed)(void))
 {
+    if (!equipment_writes_allowed()) return SHELLY_DEFERRED;
     const int64_t deadline = esp_timer_get_time() + 1100000;
     ha_control_state current;
     const shelly_result result = control_until(endpoint, entity, HA_NUMBER, &current, deadline);
@@ -312,6 +315,7 @@ shelly_result ha_number_set(const ha_endpoint *endpoint, const char *entity, dou
 shelly_result ha_select_set(const ha_endpoint *endpoint, const char *entity, const char *option,
                             bool (*still_allowed)(void))
 {
+    if (!equipment_writes_allowed()) return SHELLY_DEFERRED;
     const int64_t deadline = esp_timer_get_time() + 1100000;
     ha_control_state current;
     const shelly_result result = control_until(endpoint, entity, HA_SELECT, &current, deadline);
@@ -336,6 +340,7 @@ shelly_result ha_select_set(const ha_endpoint *endpoint, const char *entity, con
 
 shelly_result ha_button_press(const ha_endpoint *endpoint, const char *entity, bool (*still_allowed)(void))
 {
+    if (!equipment_writes_allowed()) return SHELLY_DEFERRED;
     const int64_t deadline = esp_timer_get_time() + 1100000;
     ha_control_state current;
     const shelly_result result = control_until(endpoint, entity, HA_BUTTON, &current, deadline);

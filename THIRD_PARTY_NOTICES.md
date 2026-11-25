@@ -63,3 +63,16 @@ The [controller packaging rehearsal](packaging/README.md) copies these license
 files and the managed mDNS license directly from the pinned inputs. It
 records contributing linker archives for the application and bootloader.
 Use that inventory for the per-file and per-binary release review.
+
+## DISPATCH Preview for StartOS
+
+The Linux executable uses the MIT-licensed ESP-IDF HTTP parser at the
+same pinned revision as DISPATCH/01. It links Alpine's builds of musl
+1.2.5 (MIT and listed exceptions), libevent 2.1.13 (BSD and listed
+exceptions), OpenSSL 3.5.9 (Apache-2.0), and zlib 1.4 (zlib). The GCC
+runtime notice includes the GCC Runtime Library Exception. The package
+wrapper uses Start SDK 4.1.0 and its locked npm dependencies. The package
+contains the upstream license texts, npm notice files and version
+inventory, and [pinned input references](packaging/startos/inputs.toml).
+The final service image carries the linked executable. The Alpine build
+stage supplies the compiler, headers and archives.

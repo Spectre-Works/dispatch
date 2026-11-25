@@ -22,6 +22,14 @@ Installation worker (apps/controller/main/installation.c)
        validated owner profile uploads in Settings
 ```
 
+StartOS Preview compiles the same installation worker, HTTP routes, dashboard,
+policy, and adapters. [The Linux platform code](../apps/startos) supplies
+monotonic time, the StartOS system clock, a serial HTTP event loop, TLS, and
+a persistent volume. It runs the same operations journal and activity format
+over bounded files. A build-time admission check rejects control requests
+and clears restored control state. The equipment adapters also reject writes.
+MQTT status queries and read-side identity checks remain available.
+
 ## Where changes belong
 
 | Change | Start with |

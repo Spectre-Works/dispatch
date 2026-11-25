@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
 // SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
+#include "equipment_writes.h"
 #include "tasmota.h"
 #include "integration_profile.h"
 
@@ -141,6 +142,7 @@ shelly_result tasmota_status(const shelly_target *target, unsigned channel, shel
 
 shelly_result tasmota_set(const shelly_target *target, unsigned channel, bool on, bool (*still_allowed)(void))
 {
+    if (!equipment_writes_allowed()) return SHELLY_DEFERRED;
     const int64_t deadline = esp_timer_get_time() + 1100000;
     shelly_sample current;
     const shelly_result preflight = status_until(target, channel, &current, deadline);

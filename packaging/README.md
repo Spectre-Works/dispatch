@@ -75,3 +75,72 @@ purposes. Keep a private copy of the release signer and a known-good USB
 package. If the release trust inputs need replacing and the existing
 update path is unavailable or untrusted, provision the new trust over USB.
 [Bench and USB recovery instructions](../docs/development.md#network-update-bench)
+
+## StartOS packages
+
+The `dispatch-preview` package targets StartOS 0.4.2 and newer. The packager
+builds and signs a native `.s9pk` for each of x86_64 and aarch64 from one Git
+commit. It downloads the pinned Start CLI when needed and verifies both
+package signatures and every Merkle archive entry. `STARTOS-SOURCE.json`
+records the commit and signing public-key fingerprint. The signed archive
+includes release provenance, application license texts, and upstream notices.
+
+### Local rehearsal
+
+Use Linux, Docker Buildx with a multi-architecture container builder, Node.js
+22, npm, Python 3.11 or later, OpenSSL and curl. Choose an output directory
+that does not yet exist. Generate the development signing key once and reuse
+it for upgrades on a rehearsal node.
+
+```sh
+umask 077
+mkdir -p "$HOME/.config/dispatch-startos"
+openssl genpkey -algorithm Ed25519 -out "$HOME/.config/dispatch-startos/development.pem"
+docker buildx create --name dispatch-startos --driver docker-container \
+  --driver-opt image=moby/buildkit@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
+BUILDX_BUILDER=dispatch-startos python3 packaging/prepare_startos.py build/startos-rehearsal \
+  --revision HEAD --release-version v0.0.1 \
+  --signing-key "$HOME/.config/dispatch-startos/development.pem"
+(cd build/startos-rehearsal && sha256sum -c DISPATCH-STARTOS-SHA256SUMS)
+```
+
+Use the same command with another output directory and a higher version
+to exercise a sideloaded upgrade. Verify the service dashboard and health,
+observe LAN equipment, and compare settings and history before and after a
+restart, upgrade, and StartOS backup restore. See [the operator
+guide](../docs/startos.md). When rotating pinned inputs, review the actual
+linked libraries and update the associated notices together.
+
+### Approved GitHub releases
+
+Create a protected GitHub Actions environment named `startos-release`
+with required maintainer reviewers, no self-approval, and deployments limited
+to `main`. Provision a dedicated Ed25519 private key as the
+`STARTOS_SIGNING_KEY_PEM` environment secret and put the SHA-256 of its DER
+public key in the `STARTOS_SIGNER_SHA256` environment variable. Generate and
+retain the private key in the maintainer's private storage. The Atom's OTA
+signing key is a separate P-256 key.
+
+```sh
+openssl pkey -in /private/release/startos-signer.pem -pubout -outform DER | sha256sum
+```
+
+1. After release approval, prepare the controller bundle from the intended
+   commit and tag. Push the tag and create a GitHub **draft** for that tag.
+2. Archive the existing controller bundle under `dispatch01-usb-vMAJOR.MINOR.PATCH.tar.gz`
+   with `manifest.json` at the archive root. Attach it, `dispatch01.bin`,
+   and `dispatch01-ota-v1.txt` to the draft.
+
+   ```sh
+   tar -C build/controller-v0.1.0 -czf build/dispatch01-usb-v0.1.0.tar.gz .
+   ```
+3. Run **Attach StartOS to release draft** on `main` with the release tag
+   and approve the protected environment. The job verifies the USB
+   bundle's source commit and the signed OTA files. It builds and verifies
+   both StartOS packages from the same commit and attaches those packages,
+   provenance, and checksums to the existing draft. A missing key, signer
+   mismatch, verification failure, or upload failure fails the job.
+4. Review the green job and the complete draft before the separate publish
+   decision. Retry a failed job while the release is still a draft. Retries
+   replace only the StartOS assets for that tag and upload their checksum file
+   last. StartOS marketplace publication uses its own approval process.

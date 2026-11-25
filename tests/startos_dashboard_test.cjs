@@ -1,0 +1,65 @@
+// SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
+// SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const { chromium } = require('playwright');
+
+async function check() {
+  const [url, keyFile, exportPath, mode] = process.argv.slice(2);
+  const browser = await chromium.launch({ executablePath: process.env.DISPATCH_TEST_CHROMIUM });
+  try {
+    const page = await browser.newPage({ acceptDownloads: true });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(url);
+    await page.locator('#owner-key').fill(await fs.readFile(keyFile, 'utf8'));
+    await page.locator('#unlock').click();
+    await page.locator('#dashboard').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#mode').textContent(), /Preview/);
+    assert.equal(await page.locator('#control').isVisible(), false);
+    await page.locator('[data-view="settings"]').click();
+    assert.equal(await page.locator('#discover').isVisible(), false);
+    await page.locator('[data-settings="transfer-settings"]').click();
+    if (mode === 'import') {
+      await page.locator('#import-file').setInputFiles(exportPath);
+      await page.locator('#import-preview').waitFor({ state: 'visible' });
+      const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/import');
+      await page.locator('#apply-import').click();
+      assert.equal((await saved).status(), 200);
+      await page.locator('#import-preview').waitFor({ state: 'hidden' });
+      const status = await page.evaluate(async owner => {
+        const response = await fetch('/api/status', { headers: { 'X-Dispatch-Key': owner } });
+        return response.json();
+      }, await fs.readFile(keyFile, 'utf8'));
+      assert.equal(status.enabled, false);
+      assert.equal(status.rate, 12.345);
+      assert.equal(status.devices[0].identity, 'shellyplusplugsus-000000000001');
+      assert.equal(status.devices[0].firstRun.mapping, false);
+      assert.equal(status.mqtt.ip, '');
+      assert.equal(status.home.ip, '');
+      assert.deepEqual(errors, []);
+      return;
+    }
+    const downloaded = page.waitForEvent('download');
+    await page.locator('#export-config').click();
+    await (await downloaded).saveAs(exportPath);
+    const plan = JSON.parse(await fs.readFile(exportPath, 'utf8'));
+    assert.equal(plan.format, 'dispatch-configuration');
+    assert.equal(plan.version, 4);
+    assert.equal(plan.rate, 12345);
+    assert.equal(plan.equipment[0].identity, 'shellyplusplugsus-000000000001');
+    assert.equal(plan.equipment[0].minerIp, '10.241.0.1');
+    assert.equal(plan.equipment.length, 8);
+    assert.deepEqual(Object.keys(plan.equipment[0]).sort(), ['identity', 'ip', 'minerIp', 'slot']);
+    assert.equal(JSON.stringify(plan).includes('fixturepass'), false);
+    assert.equal(JSON.stringify(plan).includes('owner'), false);
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+}
+
+check().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});

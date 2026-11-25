@@ -106,3 +106,28 @@ A fresh simulator process starts a new synthetic meter. Reusing an
 installation with saved meter anchors can create an accounting gap.
 Use **Activity → Electricity accounting** to review a gap and resume from
 fresh readings when appropriate.
+
+## StartOS Preview worker and dashboard
+
+Build the Linux service with CMake, OpenSSL, libevent, zlib, and the ESP-IDF
+HTTP parser. Run the fixtures in a fresh Linux network namespace. The
+namespace isolates three synthetic private addresses and fixed equipment
+ports from the physical LAN.
+
+```sh
+cmake -S apps/startos -B build/startos-tests -DDISPATCH_REPLAY_FIXTURES=ON \
+  -DDISPATCH_HTTP_PARSER="$IDF_PATH/components/http_parser"
+cmake --build build/startos-tests --parallel
+sudo unshare --net sh -ec '
+  ip link set lo up
+  for address in 1 2 3; do ip addr add "10.241.0.$address/24" dev lo; done
+  PYTHONDONTWRITEBYTECODE=1 python3 tests/startos_preview.py build/startos-tests
+'
+```
+
+The replay compiles the worker in both admission modes and feeds it the same
+observations and time. The HTTP test runs the packaged service's normal
+routes against live synthetic TCP and TLS listeners. For dashboard transfer,
+install Playwright in your test environment, make it available to Node, and
+add `--browser` to the Python test. Set `DISPATCH_TEST_CHROMIUM` if using
+an existing Chromium executable.

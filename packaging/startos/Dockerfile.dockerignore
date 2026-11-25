@@ -1,0 +1,8 @@
+**
+!apps/
+!apps/startos/**
+!apps/controller/main/**
+!apps/web/index.html
+!core/**
+!integrations/**
+!.startos-inputs/http-parser/**

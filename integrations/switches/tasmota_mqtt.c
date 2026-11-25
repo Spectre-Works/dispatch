@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
 // SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
+#include "equipment_writes.h"
 #include "tasmota_mqtt.h"
 
 #include "tasmota.h"
@@ -74,6 +75,7 @@ shelly_result mqtt_tasmota_status(const mqtt_endpoint *endpoint, const char *mac
 shelly_result mqtt_tasmota_set(const mqtt_endpoint *endpoint, const char *mac, const char *topic, bool on,
                               bool (*still_allowed)(void))
 {
+    if (!equipment_writes_allowed()) return SHELLY_DEFERRED;
     if (!tasmota_valid_identity(mac) || !mqtt_tasmota_valid_topic(topic)) return SHELLY_IDENTITY;
     char power[TOPIC_BYTES], power1[TOPIC_BYTES];
     response_topic(power, topic, "POWER");

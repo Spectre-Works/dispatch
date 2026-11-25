@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
+# SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
+name: Attach StartOS to release draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing DISPATCH release tag with controller assets on its draft
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: startos-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  startos:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: startos-release
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.22.0'
+      - name: Verify draft and controller assets
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          commit="$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")"
+          git merge-base --is-ancestor "$commit" HEAD
+          gh release view "$RELEASE_TAG" --json isDraft,tagName |
+            jq -e --arg tag "$RELEASE_TAG" '.isDraft and .tagName == $tag'
+          mkdir -p "$RUNNER_TEMP/controller"
+          gh release download "$RELEASE_TAG" --dir "$RUNNER_TEMP/controller" \
+            --pattern "dispatch01-usb-$RELEASE_TAG.tar.gz" \
+            --pattern dispatch01.bin --pattern dispatch01-ota-v1.txt
+          python3 packaging/verify_controller_release.py "$RUNNER_TEMP/controller" "$RELEASE_TAG" "$commit"
+          printf 'RELEASE_COMMIT=%s\n' "$commit" >> "$GITHUB_ENV"
+      - name: Build and verify both signed packages
+        shell: bash
+        env:
+          STARTOS_SIGNING_KEY_PEM: ${{ secrets.STARTOS_SIGNING_KEY_PEM }}
+          STARTOS_SIGNER_SHA256: ${{ vars.STARTOS_SIGNER_SHA256 }}
+          BUILDX_BUILDER: dispatch-startos
+        run: |
+          if [[ -z "$STARTOS_SIGNING_KEY_PEM" || -z "$STARTOS_SIGNER_SHA256" ]]; then
+            echo "::error::The StartOS release signing key and expected fingerprint are required."
+            exit 1
+          fi
+          umask 077
+          key="$(mktemp "$RUNNER_TEMP/startos-key.XXXXXX")"
+          trap 'rm -f -- "$key"' EXIT
+          printf '%s\n' "$STARTOS_SIGNING_KEY_PEM" > "$key"
+          unset STARTOS_SIGNING_KEY_PEM
+          docker buildx create --name "$BUILDX_BUILDER" --driver docker-container \
+            --driver-opt image=moby/buildkit@sha256:baf6138eb8c37644800c7c913fba051e840ebb9ba13eaf92d92ef9a1712d0b4c
+          python3 packaging/prepare_startos.py "$RUNNER_TEMP/startos" \
+            --revision "$RELEASE_COMMIT" --release-version "$RELEASE_TAG" --signing-key "$key" \
+            --expected-signer-sha256 "$STARTOS_SIGNER_SHA256"
+      - name: Attach StartOS assets to the draft
+        shell: bash
+        run: |
+          gh release view "$RELEASE_TAG" --json isDraft,tagName |
+            jq -e --arg tag "$RELEASE_TAG" '.isDraft and .tagName == $tag'
+          output="$RUNNER_TEMP/startos"
+          (cd "$output" && sha256sum -c DISPATCH-STARTOS-SHA256SUMS)
+          gh release upload "$RELEASE_TAG" --clobber \
+            "$output"/dispatch-preview-"$RELEASE_TAG"-{x86_64,aarch64}.s9pk "$output/STARTOS-SOURCE.json"
+          gh release upload "$RELEASE_TAG" --clobber "$output/DISPATCH-STARTOS-SHA256SUMS"

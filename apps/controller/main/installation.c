@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC
 // SPDX-License-Identifier: LicenseRef-Spectre-Dispatch-1.0
 #include "installation.h"
+#include "equipment_writes.h"
 #include "integration_profile.h"
 
 #include "discovery.h"
@@ -872,6 +873,7 @@ esp_err_t installation_notifications(const notification_target *target)
 
 esp_err_t installation_notification_test(void)
 {
+    if (!equipment_writes_allowed()) return ESP_ERR_NOT_SUPPORTED;
     lock();
     const bool queued = state.notifications.ip[0] &&
         notification_enqueue(&notifications, NOTICE_TEST, 0, network_uptime());
@@ -1175,6 +1177,7 @@ esp_err_t installation_ha_meter(unsigned slot, uint16_t identity, const home_met
 
 esp_err_t installation_ha_action(const char *entity, double value, const char *option)
 {
+    if (!equipment_writes_allowed()) return ESP_ERR_NOT_SUPPORTED;
     lock();
     if (!state.home.endpoint.ip[0] || !state.home.actuator[0] || strcmp(entity, state.home.actuator) ||
         !home.known[2] || network_uptime() - home.at[2] > OBSERVATION_TTL || integration_busy(home.command) ||
@@ -1200,6 +1203,7 @@ esp_err_t installation_ha_action(const char *entity, double value, const char *o
 
 esp_err_t installation_gx_target(const char *ip, int32_t expected, int32_t watts)
 {
+    if (!equipment_writes_allowed()) return ESP_ERR_NOT_SUPPORTED;
     if (watts < -VICTRON_TARGET_MAX || watts > VICTRON_TARGET_MAX) return ESP_ERR_INVALID_ARG;
     lock();
     if (strcmp(ip, state.grid.target.ip) || !victron_grid_phases(state.grid.target.identity) ||
@@ -1377,6 +1381,7 @@ esp_err_t installation_confirm_mapping(unsigned i, const association *expected)
 
 esp_err_t installation_control(bool enable)
 {
+    if (!equipment_writes_allowed() && enable) return ESP_ERR_NOT_SUPPORTED;
     lock();
     bool observed = false;
     for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
@@ -2109,6 +2114,7 @@ static bool test_budget_available(unsigned slot, const dispatch_inputs *in, unsi
 
 static const char *test_start_block(unsigned slot, const dispatch_inputs *in, bool queued)
 {
+    if (!equipment_writes_allowed()) return "Timed power tests are available on DISPATCH/01.";
     if (!queued && network_update_staged()) return "Wait for the controller to restart.";
     if (!in->outlet[slot].present) return "Pair a metered outlet first.";
     if (!mapping_allows_control(slot)) return "Confirm what this outlet powers first.";
@@ -2198,6 +2204,10 @@ static shelly_result send_relay(unsigned slot, bool on, uint16_t timed, bool *cu
 
 esp_err_t installation_power_test(unsigned slot, uint16_t identity, bool start, const char **conflict)
 {
+    if (!equipment_writes_allowed()) {
+        *conflict = "Timed power tests are available on DISPATCH/01.";
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     if (slot >= DISPATCH_LIMIT) return ESP_ERR_INVALID_ARG;
     lock();
     esp_err_t result = ESP_ERR_INVALID_STATE;
@@ -3658,6 +3668,7 @@ static bool restart_ready(unsigned slot, uint32_t now)
 
 esp_err_t installation_miner_restart(unsigned slot, uint16_t identity, const char *password)
 {
+    if (!equipment_writes_allowed()) return ESP_ERR_NOT_SUPPORTED;
     if (slot >= DISPATCH_LIMIT || !password[0] || strlen(password) >= GOLDSHELL_PASSWORD_BYTES)
         return ESP_ERR_INVALID_ARG;
     lock();
@@ -3787,6 +3798,7 @@ static void preset_binding(unsigned slot, char binding[PRESET_BINDING_BYTES])
 
 esp_err_t installation_power_mode(unsigned slot, goldshell_mode expected, goldshell_mode desired, const char *password)
 {
+    if (!equipment_writes_allowed() && desired != GOLDSHELL_MODE_UNKNOWN) return ESP_ERR_NOT_SUPPORTED;
     if (slot >= DISPATCH_LIMIT || strlen(password) >= sizeof(power_job.password)) return ESP_ERR_INVALID_ARG;
     lock();
     const uint32_t now = network_uptime();
@@ -3872,6 +3884,7 @@ esp_err_t installation_preset_choice(unsigned slot, uint16_t identity, preset_st
 
 esp_err_t installation_preset_evaluate(unsigned slot, bool start)
 {
+    if (!equipment_writes_allowed()) return ESP_ERR_NOT_SUPPORTED;
     if (slot >= DISPATCH_LIMIT) return ESP_ERR_INVALID_ARG;
     lock();
     const uint32_t now = network_uptime();
@@ -4529,7 +4542,7 @@ static bool poll_equipment(bool miner)
 static void worker(void *arg)
 {
     uint32_t next_log = 0, next_work_check = 0, next_notification = 0, next_detection = 0, next_telemetry = 0;
-    const uint32_t boot = esp_random();
+    const uint32_t boot = equipment_writes_allowed() ? esp_random() : 0;
     uint32_t poll_epoch = UINT32_MAX;
     unsigned background = 0;
     for (;;) {
@@ -4562,8 +4575,10 @@ static void worker(void *arg)
         lock();
         update_solar_shed_timer(network_uptime());
         update_daylight_bridge(network_uptime());
-        power_test_tick(network_uptime());
-        if (power_test.phase == POWER_TEST_STOPPING && !power_test.retry_off) power_test_tick(network_uptime());
+        if (equipment_writes_allowed()) {
+            power_test_tick(network_uptime());
+            if (power_test.phase == POWER_TEST_STOPPING && !power_test.retry_off) power_test_tick(network_uptime());
+        }
         consider_preset_job(network_uptime());
         bool commanded = false;
         if (state.enabled && network_online() && !storage_error) {
@@ -4606,7 +4621,7 @@ static void worker(void *arg)
                     else if (!network_update_active()) discovery_tick();
                     break;
                 case 7:
-                    if (network_uptime() >= next_notification) {
+                    if (equipment_writes_allowed() && network_uptime() >= next_notification) {
                         const bool attempted = deliver_notification(network_uptime(), boot);
                         next_notification = network_uptime() + (attempted ? POLL_SECONDS : 1);
                     }
@@ -4740,6 +4755,13 @@ void installation_start(void)
             ESP_LOGE("dispatch", "Could not initialize the operations journal");
         }
     }
+    if (!equipment_writes_allowed() && (state.enabled || state.test_armed || state.hold_mask ||
+        state.hold_on || state.attempt_counts || state.evaluation.active)) {
+        energy_preview();
+        state.test_armed = 0;
+        state.evaluation = (preset_evaluation){0};
+        dirty = true;
+    }
     const uint64_t revision = operating_profile_revision();
     const uint64_t grid_revision = grid_profile_revision(state.grid.target.identity);
     if (state.profile_revision != revision || state.grid_profile_revision != grid_revision) {
@@ -4772,3 +4794,13 @@ void installation_start(void)
     ESP_ERROR_CHECK(xTaskCreate(worker, "dispatch_worker", WORKER_STACK, NULL, 4, NULL)
                     == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 }
+
+#ifdef DISPATCH_PREVIEW_ONLY
+void installation_checkpoint(void)
+{
+    lock();
+    if (dirty) save();
+    timeline_flush_events();
+    unlock();
+}
+#endif

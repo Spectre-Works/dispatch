@@ -41,6 +41,11 @@ history, and control enablement stay on the original controller. Set up
 energy and mining-service connections and review equipment mappings on the
 destination before enabling control.
 
+StartOS Preview uses this same export and import flow. To move a plan to
+DISPATCH/01, open the exported file on the Atom dashboard and apply it in
+Preview. The StartOS service backup is a separate volume backup used for
+StartOS restore.
+
 When the weekend plan is enabled, the top-level schedule, Quiet Hours,
 and rate windows apply Monday through Friday. The default rate and
 daily allowance apply to both day groups.
