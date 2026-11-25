@@ -621,6 +621,7 @@ static esp_err_t status_page(httpd_req_t *request)
         snapshot.settings.policy.daily_allowance_millicents / 1000.0,
         snapshot.settings.utc_offset_minutes, snapshot.timezone);
     if (!equipment_writes_allowed()) add(request, "\"edition\":\"startos-preview\",");
+    add(request, "\"activityGeneration\":%lu,", (unsigned long)snapshot.activity_generation);
     add(request, "\"quietEnabled\":%s,\"quietActive\":%s,\"quietStart\":%u,\"quietEnd\":%u,",
         truth(snapshot.quiet.enabled), truth(snapshot.quiet_active),
         snapshot.quiet.start_minute, snapshot.quiet.end_minute);
@@ -1469,12 +1470,18 @@ static esp_err_t apply_action(const char **conflict, const char **error)
     }
     if (!strcmp(mode, "resume-meter")) {
         *conflict = "Meter recovery needs a synchronized clock and a fresh energy reading from each affected outlet.";
-        return installation_accounting(false);
+        return installation_accounting(ACCOUNTING_RESUME);
+    }
+    if (!strcmp(mode, "clear-activity")) {
+        int confirmed;
+        *error = "Confirm that you want to clear activity history.";
+        *conflict = "Activity history cannot be cleared in the current storage state.";
+        return integer("confirm", 1, 1, &confirmed) ? installation_accounting(ACCOUNTING_CLEAR_ACTIVITY) : ESP_ERR_INVALID_ARG;
     }
     if (!strcmp(mode, "clear-account")) {
         int confirmed;
         *error = "Confirm that you want to clear electricity accounting and daily reports.";
-        return integer("confirm", 1, 1, &confirmed) ? installation_accounting(true) : ESP_ERR_INVALID_ARG;
+        return integer("confirm", 1, 1, &confirmed) ? installation_accounting(ACCOUNTING_CLEAR_DAILY) : ESP_ERR_INVALID_ARG;
     }
     if (!strcmp(mode, "mining")) return save_mining(error);
     if (!strcmp(mode, "notice-config")) {

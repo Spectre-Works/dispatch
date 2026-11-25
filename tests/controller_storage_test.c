@@ -12,13 +12,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-enum { SECTOR = 4096, ARCHIVE_SECTORS = 136, OPERATIONS_SECTORS = 40 };
+enum { SECTOR = 4096, ARCHIVE_SECTORS = 136, OPERATIONS_SECTORS = 40, LEGACY_SECTORS = 14 };
 static const esp_partition_t parts[] = {
     {.size = SECTOR * ARCHIVE_SECTORS, .erase_size = SECTOR, .index = 0},
     {.size = SECTOR * OPERATIONS_SECTORS, .erase_size = SECTOR, .index = 1},
+    {.size = SECTOR * LEGACY_SECTORS, .erase_size = SECTOR, .index = 2},
 };
-static uint8_t *flash[2];
-static unsigned *erases[2];
+static uint8_t *flash[sizeof(parts) / sizeof(*parts)];
+static unsigned *erases[sizeof(parts) / sizeof(*parts)];
 static size_t write_limit = SIZE_MAX;
 
 const esp_partition_t *esp_partition_find_first(int type, int subtype, const char *label)
@@ -32,7 +33,8 @@ esp_err_t esp_partition_register_external(void *chip, size_t address, size_t siz
 {
     assert(!chip && address == 0x12000 && size == 0xe000 && label && type == ESP_PARTITION_TYPE_DATA &&
            subtype == 0x40 && out);
-    return ESP_FAIL;
+    *out = &parts[2];
+    return ESP_OK;
 }
 
 esp_err_t esp_partition_read(const esp_partition_t *part, size_t offset, void *data, size_t size)
@@ -95,7 +97,7 @@ static void balanced(const unsigned *counts, unsigned sectors)
 static void archive_test(void)
 {
     enum { START = 6000000, DAYS = 40, END = START + DAYS * 288 };
-    timeline_start();
+    timeline_start(0);
     for (uint32_t bucket = START; bucket < END; ++bucket) {
         timeline_sample sample = {.productive = 128, .grid_decawatts = -4, .grid_min = -5,
             .grid_max = 2, .grid_count = 30};
@@ -111,7 +113,7 @@ static void archive_test(void)
         }
         timeline_flush_events();
     }
-    timeline_start();
+    timeline_start(0);
     for (unsigned tier = 0; tier < TIMELINE_TIERS; ++tier) {
         const unsigned ratio = timeline_period(tier) / TIMELINE_SECONDS;
         const uint32_t last = END / ratio;
@@ -135,6 +137,47 @@ static void archive_test(void)
     balanced(counts + 31, 40);
     balanced(counts + 71, 41);
     balanced(counts + 112, 24);
+
+    // Format a four-slot archive bucket that is only present in legacy flash.
+    const uint32_t legacy_bucket = START - 1, legacy_group = legacy_bucket / 63;
+    const size_t page = legacy_group % 12 * SECTOR;
+    const uint32_t header[] = {0x44535031, legacy_group, ~legacy_group, 0};
+    uint16_t old_sample[32] = {[6] = 0x5400};
+    old_sample[7] = esp_crc16_le(0, (const uint8_t *)old_sample, sizeof(old_sample));
+    assert(esp_partition_write(&parts[2], page, header, sizeof(header)) == ESP_OK);
+    assert(esp_partition_write(&parts[2], page + (1 + legacy_bucket % 63) * sizeof(old_sample),
+                               old_sample, sizeof(old_sample)) == ESP_OK);
+    timeline_sample sample;
+    assert(timeline_sample_read(0, legacy_bucket, &sample));
+
+    timeline_queue_event((timeline_event){.epoch = END * 300, .slot = 7});
+    timeline_clear(1);
+    timeline_flush_events();
+    assert(timeline_event_cursor() == 0);
+    timeline_event event;
+    assert(!timeline_event_read(cursor - 1, &event));
+    assert(!timeline_sample_read(0, legacy_bucket, &sample));
+    for (unsigned tier = 0; tier < TIMELINE_TIERS; ++tier) {
+        const unsigned ratio = timeline_period(tier) / TIMELINE_SECONDS;
+        assert(!timeline_sample_read(tier, END / ratio - 1, &sample));
+    }
+    // A clear near a bucket boundary can write a new sample at the same index.
+    sample = (timeline_sample){.productive = 4, .spent_millicents = 4};
+    timeline_sample_write(END - 1, &sample);
+    timeline_complete(END);
+    timeline_queue_event((timeline_event){.epoch = END * 300, .slot = 2});
+    timeline_flush_events();
+    timeline_start(1);
+    assert(!timeline_sample_read(0, legacy_bucket, &sample));
+    assert(timeline_event_cursor() == 1 && timeline_event_read(0, &event) && event.slot == 2);
+    for (unsigned tier = 0; tier < TIMELINE_TIERS; ++tier) {
+        const unsigned ratio = timeline_period(tier) / TIMELINE_SECONDS;
+        assert(timeline_sample_read(tier, END / ratio - 1, &sample) && sample.spent_millicents == 4);
+        assert(!timeline_sample_read(tier, END / ratio - 2, &sample));
+    }
+    timeline_clear(2);
+    timeline_start(2);
+    assert(timeline_event_cursor() == 0 && !timeline_sample_read(0, END - 1, &sample));
 }
 
 static void commit_attempt(bool first, bool torn)
@@ -167,7 +210,7 @@ static void commit_attempt(bool first, bool torn)
 
 int main(void)
 {
-    for (unsigned i = 0; i < 2; ++i) {
+    for (unsigned i = 0; i < sizeof(parts) / sizeof(*parts); ++i) {
         flash[i] = mmap(NULL, parts[i].size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
         erases[i] = mmap(NULL, parts[i].size / SECTOR * sizeof(unsigned), PROT_READ | PROT_WRITE,
                          MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -184,5 +227,5 @@ int main(void)
     commit_attempt(false, false);
     static uint8_t state[9952];
     assert(operations_load(state, sizeof(state)) && state[9944] == (0xa5 ^ 1));
-    puts("Eight-slot archive retention, extrema, cost, wear rotation, and torn journal recovery passed");
+    puts("Eight-slot archive retention, clearing, extrema, cost, wear rotation, and torn journal recovery passed");
 }

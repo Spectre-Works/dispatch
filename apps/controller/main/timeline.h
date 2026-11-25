@@ -37,7 +37,8 @@ typedef struct {
 } timeline_event;
 
 // Writers run under the installation lock. The web reader never holds that lock while sending.
-void timeline_start(void);
+void timeline_start(uint32_t generation);
+void timeline_clear(uint32_t generation);
 bool timeline_available(void);
 unsigned timeline_period(unsigned tier);
 unsigned timeline_retention(unsigned tier);

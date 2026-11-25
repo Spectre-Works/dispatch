@@ -35,6 +35,7 @@ enum { INSTALLATION_VERSION = 30, LEGACY_VERSION = 29, HOME_METER_VERSION = 28, 
        SOLAR_DAY_POLL = 300, SOLAR_NIGHT_POLL = 1200, SOLAR_FRESH = 900, SOLAR_RETRY = 5,
        SOLAR_START_RESERVATION = 30, BRIDGE_SOLAR_EVIDENCE_SECONDS = 600 };
 enum { PRESET_BINDING_BYTES = 192 };
+enum { ACTIVITY_GENERATION_TAG = 0x44534147 };
 enum { TEST_CONFIRM_SECONDS = 20, TEST_HASH_WARMUP = 30, TEST_METER_WARMUP = 120,
        TEST_HASH_STABLE = 15, TEST_METER_STABLE = 30 };
 
@@ -159,7 +160,9 @@ typedef struct {
     uint64_t bridge_started;
     _Alignas(uint64_t) dispatch_power_test_result power_test[DISPATCH_LIMIT];
     uint8_t test_armed;
-    _Alignas(uint64_t) uint8_t reserved_policy;
+    // Reuse the aligned reserved bytes without changing the journal layout.
+    _Alignas(uint64_t) uint32_t activity_generation;
+    uint32_t activity_generation_tag;
     _Alignas(uint64_t) dispatch_operating_plan operating;
     uint8_t preset_choice[DISPATCH_LIMIT];
     _Alignas(uint64_t) home_settings home;
@@ -301,6 +304,7 @@ static uint32_t measured_preset_watts(unsigned slot, goldshell_mode mode);
 static bool fresh(const device_runtime *device, uint32_t now);
 static bool admit_on(void);
 static bool restart_ready(unsigned slot, uint32_t now);
+static void reset_preset_sample(device_runtime *device);
 static history_event history[HISTORY_SIZE];
 static unsigned history_count, history_next;
 static uint32_t generation, next_start, next_checkpoint, worker_stack;
@@ -1490,9 +1494,15 @@ static bool meter_current(unsigned i, bool observed, time_t utc, uint32_t day)
         anchor->total_mwh == sample->total_mwh && local_time(anchor->epoch, &anchor_day, NULL) && anchor_day == day;
 }
 
-esp_err_t installation_accounting(bool clear)
+esp_err_t installation_accounting(accounting_action action)
 {
+    const bool clear = action != ACCOUNTING_RESUME;
+    const bool clear_activity = action == ACCOUNTING_CLEAR_ACTIVITY;
     lock();
+    if (clear_activity && state.activity_generation == UINT32_MAX) {
+        unlock();
+        return ESP_ERR_INVALID_STATE;
+    }
     const time_t utc = network_clock();
     const uint32_t now = network_uptime();
     uint32_t day = 0;
@@ -1515,7 +1525,7 @@ esp_err_t installation_accounting(bool clear)
             unlock();
             return ESP_ERR_INVALID_STATE;
         }
-        if (ready) reset.anchor[i] = state.budget.anchor[i];
+        if (ready && !clear_activity) reset.anchor[i] = state.budget.anchor[i];
     }
 
     rollback = state;
@@ -1526,6 +1536,10 @@ esp_err_t installation_accounting(bool clear)
         memset(state.days, 0, sizeof(state.days));
         memset(state.solar_days, 0, sizeof(state.solar_days));
         memset(state.preset_days, 0, sizeof(state.preset_days));
+        if (clear_activity) {
+            ++state.activity_generation;
+            state.activity_generation_tag = ACTIVITY_GENERATION_TAG;
+        }
     } else {
         state.budget.gap_mask = 0;
         day_evidence(day)->gap_accepted = true;
@@ -1537,10 +1551,17 @@ esp_err_t installation_accounting(bool clear)
             for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
                 runtime[i].observation_day = 0;
                 runtime[i].next_probe = 0;
+                if (clear_activity) reset_preset_sample(&runtime[i]);
             }
             ++generation;
         }
-        record(DISPATCH_LIMIT, clear ? EVENT_ACCOUNTING_CLEARED : EVENT_METER_RECOVERED);
+        if (clear_activity) {
+            timeline_clear(state.activity_generation);
+            history_count = history_next = 0;
+            memset(&telemetry, 0, sizeof(telemetry));
+        } else {
+            record(DISPATCH_LIMIT, clear ? EVENT_ACCOUNTING_CLEARED : EVENT_METER_RECOVERED);
+        }
     } else {
         state = rollback;
         dirty = true;
@@ -2566,6 +2587,7 @@ void installation_read(installation_view *view)
     decide(&in, decisions, utc);
     *view = (installation_view){
         .now = now, .enabled = state.enabled, .day = state.budget.day,
+        .activity_generation = state.activity_generation,
         .used_nano_cents = state.budget.used_nano_cents,
         .worker_stack = worker_stack, .clock_valid = in.clock_valid,
         .accounting_complete = in.accounting_valid, .paused = in.paused,
@@ -4702,7 +4724,6 @@ static void migrate_legacy(void)
     memcpy(&state.bridge_started, &old->bridge_started, sizeof(old->bridge_started));
     memcpy(&state.power_test, &old->power_test, sizeof(old->power_test));
     memcpy(&state.test_armed, &old->test_armed, sizeof(old->test_armed));
-    memcpy(&state.reserved_policy, &old->reserved_policy, sizeof(old->reserved_policy));
     memcpy(&state.operating, &old->operating, sizeof(old->operating));
     memcpy(&state.preset_choice, &old->preset_choice, sizeof(old->preset_choice));
     memcpy(&state.home, &old->home, sizeof(old->home));
@@ -4735,7 +4756,6 @@ done:
 
 void installation_start(void)
 {
-    timeline_start();
     ESP_ERROR_CHECK(nvs_open("dispatch_op", NVS_READWRITE, &nvs));
     preset_credentials_start(nvs);
     state = (installation_store){
@@ -4755,6 +4775,10 @@ void installation_start(void)
             ESP_LOGE("dispatch", "Could not initialize the operations journal");
         }
     }
+    if (state.activity_generation_tag != ACTIVITY_GENERATION_TAG) {
+        state.activity_generation = state.activity_generation_tag = 0;
+    }
+    timeline_start(state.activity_generation);
     if (!equipment_writes_allowed() && (state.enabled || state.test_armed || state.hold_mask ||
         state.hold_on || state.attempt_counts || state.evaluation.active)) {
         energy_preview();

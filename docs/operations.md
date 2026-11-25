@@ -107,7 +107,7 @@ readings, and current operating state. [Miner capability details](../integration
 | --- | --- |
 | A miner is waiting to start | Read the outlet’s proposed action or policy decision on Overview. If draw is unknown, use the supervised test or enter a startup value. If Preview is active, review the proposed action before enabling control. |
 | An unexpected stop or cost increase | In **Activity → Power & decisions**, pick a miner and interval. Compare paid energy and cost with the relay, preset, daylight gap, and source readings. **Daily budget** shows spending relative to the allowance. |
-| An electricity meter gap | Open **Activity → Electricity accounting**. Resuming from fresh readings keeps recorded spending and marks the gap. Clearing accounting resets the balance and saved daily reports. |
+| An electricity meter gap | Open **Activity → Electricity accounting**. Resuming from fresh readings keeps recorded spending and marks the gap. |
 | An unavailable or stale reading | Use **Needs attention** and **What happens next** on Overview. Check live readings in **Energy**, source configuration in **Settings → Energy sources**, and the miner in **Equipment**. Check **Settings → Clock** if local time is unavailable. |
 | A miner powered on without observed work | Check the miner API and **Mining path**. Optional XBT node and DATUM observations provide upstream evidence. Set priorities, temporary holds, and optional recovery in **Equipment → Coordination**. |
 
@@ -123,6 +123,11 @@ meter readings as Overview. The chart and energy total update as intervals
 close. An equipment filter shows the selected equipment’s recorded intervals.
 Daily evidence remains available for seven days. Relay and preset changes
 are stored with original timestamps in a separate event log.
+
+Use **Activity → Electricity accounting → Clear activity history** to start
+a fresh record. It clears saved charts, events, daily reports, and today’s
+recorded spending. Your configured allowance, operating plan, equipment
+pairings, and other settings stay in place. Recording resumes with new readings.
 
 Use **Settings → Transfer → Export private backup** to export version 4,
 or use the same screen to review a version 3 or 4

@@ -57,6 +57,20 @@ async function check() {
     assert.deepEqual(Object.keys(plan.equipment[0]).sort(), ['identity', 'ip', 'minerIp', 'slot']);
     assert.equal(JSON.stringify(plan).includes('fixturepass'), false);
     assert.equal(JSON.stringify(plan).includes('owner'), false);
+    await page.getByRole('button', { name: 'Activity', exact: true }).click();
+    await page.getByText('Owner cleared electricity accounting and daily reports', { exact: false }).first().waitFor();
+    const clear = page.getByRole('button', { name: 'Clear activity history' });
+    const canceled = page.waitForEvent('dialog');
+    const firstClick = clear.click();
+    const confirmation = await canceled;
+    assert.match(confirmation.message(), /operating plan, equipment pairings, and settings will be kept/);
+    await confirmation.dismiss();
+    await firstClick;
+    assert.ok(await page.locator('#events').getByText(/Owner cleared electricity accounting/).isVisible());
+    page.once('dialog', dialog => dialog.accept());
+    await clear.click();
+    await page.getByText('Activity history cleared. Your settings were kept.').waitFor();
+    assert.equal(await page.getByText(/Owner cleared electricity accounting/).count(), 0);
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

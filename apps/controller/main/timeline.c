@@ -10,7 +10,7 @@
 
 enum { SECTOR = 4096, OLD_SAMPLE_SECTORS = 12, OLD_EVENT_SECTORS = 2, OLD_TAG = 0x5400,
        EVENT_QUEUE = 32, EVENT_FLUSH = 4 };
-typedef struct { uint32_t magic, group, inverse, reserved; } page_header;
+typedef struct { uint32_t magic, group, inverse, generation; } page_header;
 typedef struct { unsigned first, sectors, stride; uint32_t magic; } flash_ring;
 
 static const flash_ring samples[TIMELINE_TIERS] = {
@@ -42,7 +42,7 @@ _Static_assert(((SECTOR - sizeof(page_header)) / sizeof(timeline_sample)) * 30 >
 _Static_assert(((SECTOR - sizeof(page_header)) / sizeof(timeline_sample)) * 39 >= 7 * 24 * 4, "Seven-day ring");
 _Static_assert(((SECTOR - sizeof(page_header)) / sizeof(timeline_sample)) * 40 >= 30 * 24, "Thirty-day ring");
 static const esp_partition_t *archive, *legacy;
-static atomic_uint_least32_t event_cursor;
+static atomic_uint_least32_t archive_generation, event_cursor;
 static timeline_event pending[EVENT_QUEUE];
 static unsigned queue_head, queue_count;
 static bool failure_logged;
@@ -69,22 +69,25 @@ static unsigned capacity(const flash_ring *ring)
     return (SECTOR - header_space(ring)) / ring->stride;
 }
 
-static bool valid(page_header header, const flash_ring *ring, uint32_t group)
+static bool valid(page_header header, const flash_ring *ring, uint32_t group, uint32_t generation)
 {
     return header.magic == ring->magic && header.group == group &&
-        header.inverse == ~group && header.reserved == 0;
+        header.inverse == ~group && header.generation == generation;
 }
 
 static bool read_record(const esp_partition_t *part, const flash_ring *ring, uint32_t index, void *record)
 {
     if (!part) return false;
+    const uint32_t generation = atomic_load(&archive_generation);
+    if (part == legacy && generation) return false;
     const unsigned count = capacity(ring);
     const uint32_t group = index / count;
     const uint32_t page = (ring->first + group % ring->sectors) * SECTOR;
     page_header before, after;
-    return esp_partition_read(part, page, &before, sizeof(before)) == ESP_OK && valid(before, ring, group) &&
+    return esp_partition_read(part, page, &before, sizeof(before)) == ESP_OK && valid(before, ring, group, generation) &&
         esp_partition_read(part, page + header_space(ring) + index % count * ring->stride, record, ring->stride) == ESP_OK &&
-        esp_partition_read(part, page, &after, sizeof(after)) == ESP_OK && valid(after, ring, group);
+        esp_partition_read(part, page, &after, sizeof(after)) == ESP_OK && valid(after, ring, group, generation) &&
+        generation == atomic_load(&archive_generation);
 }
 
 static bool erased(const uint32_t *words, unsigned count)
@@ -100,11 +103,12 @@ static bool append(const flash_ring *ring, uint32_t index, const void *record)
     const uint32_t group = index / count;
     const uint32_t page = (ring->first + group % ring->sectors) * SECTOR;
     const uint32_t address = page + header_space(ring) + index % count * ring->stride;
+    const uint32_t generation = atomic_load(&archive_generation);
     page_header header;
     if (esp_partition_read(archive, page, &header, sizeof(header)) != ESP_OK) return false;
-    if (!valid(header, ring, group)) {
-        if (valid(header, ring, header.group) && header.group > group) return false;
-        header = (page_header){ring->magic, group, ~group, 0};
+    if (!valid(header, ring, group, generation)) {
+        if (valid(header, ring, header.group, generation) && header.group > group) return false;
+        header = (page_header){ring->magic, group, ~group, generation};
         if (esp_partition_erase_range(archive, page, SECTOR) != ESP_OK ||
             esp_partition_write(archive, page, &header, sizeof(header)) != ESP_OK) return false;
     }
@@ -131,7 +135,7 @@ static uint16_t event_crc(timeline_event event)
     return esp_crc16_le(0, (const uint8_t *)&event, sizeof(event));
 }
 
-static uint32_t last_event(const esp_partition_t *part, const flash_ring *ring)
+static uint32_t last_event(const esp_partition_t *part, const flash_ring *ring, uint32_t generation)
 {
     if (!part) return 0;
     const unsigned count = capacity(ring);
@@ -141,7 +145,7 @@ static uint32_t last_event(const esp_partition_t *part, const flash_ring *ring)
     for (unsigned i = 0; i < ring->sectors; ++i) {
         const uint32_t page = (ring->first + i) * SECTOR;
         if (esp_partition_read(part, page, &header, sizeof(header)) != ESP_OK ||
-            !valid(header, ring, header.group) || header.group % ring->sectors != i ||
+            !valid(header, ring, header.group, generation) || header.group % ring->sectors != i ||
             header.group >= UINT32_MAX / count || (found && header.group < group)) continue;
         group = header.group;
         found = true;
@@ -155,7 +159,16 @@ static uint32_t last_event(const esp_partition_t *part, const flash_ring *ring)
     return group * count;
 }
 
-void timeline_start(void)
+void timeline_clear(uint32_t generation)
+{
+    // The operations journal has committed the new generation. Old pages are
+    // no longer visible and are erased as the rings reuse them.
+    atomic_store(&archive_generation, generation);
+    atomic_store(&event_cursor, 0);
+    queue_head = queue_count = 0;
+}
+
+void timeline_start(uint32_t generation)
 {
     archive = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, 0x41, "archive");
     if (archive && (archive->size != (events.first + events.sectors) * SECTOR ||
@@ -164,7 +177,9 @@ void timeline_start(void)
     if (!legacy) esp_partition_register_external(NULL, 0x12000, 14 * SECTOR, "history",
                                                   ESP_PARTITION_TYPE_DATA, 0x40, &legacy);
     if (legacy && legacy->size != 14 * SECTOR) legacy = NULL;
-    const uint32_t prior = last_event(legacy, &old_events), current = last_event(archive, &events);
+    timeline_clear(generation);
+    const uint32_t prior = generation ? 0 : last_event(legacy, &old_events, 0);
+    const uint32_t current = last_event(archive, &events, generation);
     atomic_store(&event_cursor, prior > current ? prior : current);
 }
 

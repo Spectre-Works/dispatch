@@ -269,11 +269,33 @@ def exercise(build, directory, browser):
             meter.grid_lost = False
             meter.grid = -560
             wait_for(lambda: grid_status()["fresh"] and grid_status()["watts"] == -560)
+            def archived_events():
+                return call("api/timeline?events=1", owner)["events"]
+
+            old_event = "Owner cleared electricity accounting and daily reports"
+            # A distinctive persisted event verifies that a clear reaches the archive.
+            action("clear-account", confirm=1)
+            wait_for(lambda: any(e["label"] == old_event for e in archived_events()))
+            wait_for(lambda: call("api/reports", owner))
+            before = status()
+            assert before["history"]
+            call("api/action", fields={"mode": "clear-activity", "confirm": 1}, expected=401)
+            action("clear-activity", http_status=400)
+            assert status()["activityGeneration"] == before["activityGeneration"]
             if browser:
                 subprocess.run(("node", Path(__file__).with_name("startos_dashboard_test.cjs"),
                                 BASE, data / "owner.key", directory / "export.json"), check=True)
-            call("api/timeline", owner)
-            call("api/reports", owner)
+            else:
+                action("clear-activity", confirm=1)
+            after = status()
+            assert after["activityGeneration"] == before["activityGeneration"] + 1
+            assert after["usedCents"] == 0 and all(e["text"] != old_event for e in after["history"])
+            assert all(e["label"] != old_event for e in archived_events())
+            for setting in ("allowance", "rate", "start", "end", "timezone", "enabled", "operating"):
+                assert after[setting] == before[setting], setting
+            for index in range(3):
+                for setting in ("ip", "identity", "minerIp", "firstRun"):
+                    assert after["devices"][index][setting] == before["devices"][index][setting], setting
 
         # Exercise the actual installation journal with old active flags and an
         # armed timed test. Fixture listeners remain in place across restart.
@@ -284,6 +306,8 @@ def exercise(build, directory, browser):
             assert restored_key == owner
             s = wait_for(observed)
             assert s["planReady"] and s["rate"] == 12.345 and s["devices"][0]["firstRun"]["mapping"]
+            assert s["activityGeneration"] == after["activityGeneration"]
+            assert all(e["label"] != old_event for e in archived_events())
             assert not s["enabled"] and not s["devices"][0]["pending"] and s["devices"][0]["powerTest"]["phase"] == 0
         if browser:
             destination = directory / "transfer-destination"

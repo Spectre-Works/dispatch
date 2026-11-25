@@ -975,7 +975,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
       <p id="accounting-status" class="muted"></p>
       <div class="row">
         <button id="resume-meter" type="button" hidden>Resume accounting</button>
-        <button id="clear-account" type="button">Reset daily accounting</button>
+        <button id="clear-activity" type="button">Clear activity history</button>
       </div>
       <p id="accounting-message" role="status"></p>
     </section>
@@ -2759,7 +2759,7 @@ function renderHistory() {
   el('events').replaceChildren(...rows);
   const empty = el('history-empty');
   empty.hidden = !!rows.length;
-  empty.textContent = filter.value ? 'No recent events for this selection.' : 'No events recorded since the controller started.';
+  empty.textContent = filter.value ? 'No recent events for this selection.' : 'No recent events recorded.';
 }
 
 function renderReports() {
@@ -2825,14 +2825,19 @@ const activityMidnights = new Map();
 const activityFormatters = new Map();
 let activityZone = '';
 
-function resetActivity() {
+function clearActivityData() {
   activityData = activityGeometry = undefined;
-  activityLoaded = activityFilter = activityLoadError = '';
-  activityRange = 'recent';
-  activityFocus = undefined;
+  activityLoaded = activityLoadError = '';
   activityIndex = -1;
   activityEpoch = 0;
   ++activityRequest;
+}
+
+function resetActivity() {
+  clearActivityData();
+  activityRange = 'recent';
+  activityFilter = '';
+  activityFocus = undefined;
   el('activity-paid').value = 'energy';
   el('activity-miners').replaceChildren();
   el('activity-events').replaceChildren();
@@ -3845,7 +3850,16 @@ function updateInstallation() {
 }
 function paint(next) {
   const initial = !state;
+  const activityCleared = state && state.activityGeneration !== next.activityGeneration;
   state = next;
+  if (activityCleared) {
+    clearActivityData();
+    reports = [];
+    reportStale = true;
+    support = undefined;
+    el('support-text').textContent = '';
+    el('support-preview').hidden = true;
+  }
   lastStatusAt = Date.now();
   statusReadFailed = false;
   el('login').hidden = true;
@@ -3901,7 +3915,7 @@ function paint(next) {
   el('accounting-status').textContent = state.meterGap
     ? 'Resume from the latest meter readings and keep recorded spending. Usage during the gap remains unknown.'
     : state.today?.gapAccepted ? 'Accounting resumed after a meter gap. Today’s totals reflect recorded usage.' :
-      'Clearing resets the daily spending balance and deletes the saved daily reports.';
+      'Clear saved charts, decision history, daily reports, and today’s recorded spending. Your settings are kept.';
   el('time-status').textContent = startosPreview ?
     (presentTime.synchronized ? 'Using the StartOS system clock.' : 'Waiting for a valid StartOS system clock.') : presentTime.synchronized
     ? 'Synchronized · last NTP update ' + duration(presentTime.syncAge) + ' ago.'
@@ -3960,6 +3974,10 @@ function paint(next) {
   if (el('power-test').open) renderPowerTest();
   if (view === 'activity') {
     renderHistory();
+    if (activityCleared) {
+      renderReports();
+      renderActivity();
+    }
     const liveCost = el('activity-paid-today');
     if (liveCost && liveCost.textContent !== paidToday) liveCost.textContent = paidToday;
   }
@@ -4879,14 +4897,12 @@ el('resume-meter').onclick = async () => {
     refreshReports();
   }
 };
-el('clear-account').onclick = async () => {
-  const active = state.enabled ? ' DISPATCH may switch outlets under the new balance.' : '';
-  if (!confirm('Reset the daily electricity allowance and clear its saved daily reports? The Activity event log keeps a record of the reset.' + active)) return;
-  if (await change('action', {mode:'clear-account', confirm:1}, 'accounting-message')) {
-    el('accounting-message').textContent = 'Daily reports cleared and allowance reset.';
-    reportStale = true;
-    activityLoaded = '';
-    refreshActivity();
+el('clear-activity').onclick = async () => {
+  const active = state.enabled ? ' DISPATCH may switch outlets as it follows your plan with a fresh spending balance.' : '';
+  if (!confirm('Clear all saved charts, decision history, daily reports, and today’s recorded spending? Your operating plan, equipment pairings, and settings will be kept.' + active)) return;
+  if (await change('action', {mode:'clear-activity', confirm:1}, 'accounting-message')) {
+    el('accounting-message').textContent = 'Activity history cleared. Your settings were kept.';
+    await refreshActivity();
   }
 };
 const pathLabels = ['Awaiting fresh evidence','Endpoint unavailable','Authentication rejected','Unsupported reply',

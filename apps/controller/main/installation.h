@@ -253,6 +253,7 @@ typedef struct {
     uint8_t preset_choice[DISPATCH_LIMIT];
     bool preset_credentials_persistent;
     unsigned history_count;
+    uint32_t activity_generation;
     uint32_t now, pause_seconds, day, local_day, worker_stack;
     uint64_t used_nano_cents;
     uint32_t active_rate;
@@ -319,7 +320,8 @@ esp_err_t installation_coordination(unsigned slot, unsigned priority, bool recov
 esp_err_t installation_rename(unsigned slot, const char *identity, const char *name);
 esp_err_t installation_override(unsigned slot, override_mode mode, unsigned seconds);
 esp_err_t installation_control(bool enable);
-esp_err_t installation_accounting(bool clear);
+typedef enum { ACCOUNTING_RESUME, ACCOUNTING_CLEAR_DAILY, ACCOUNTING_CLEAR_ACTIVITY } accounting_action;
+esp_err_t installation_accounting(accounting_action action);
 esp_err_t installation_pause(unsigned seconds, bool indefinite);
 esp_err_t installation_confirm_mapping(unsigned slot, const association *expected);
 const char *installation_event(event_kind kind);
