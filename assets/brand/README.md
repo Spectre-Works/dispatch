@@ -10,7 +10,7 @@ and StartOS package. Regenerate it after updating the mark.
 python3 tools/generate_dispatch_icon.py
 ```
 
-The [README header](dispatch-header.svg) pairs the Bridge emblem with the full DISPATCH
+The [README header](dispatch-bridge-lockup.svg) pairs the Bridge emblem with the full DISPATCH
 name in upright Chakra Petch Bold capitals. The lettering is outlined so the
 lockup renders consistently without a font download.
 

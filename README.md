@@ -1,6 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC -->
 
-# <img src="assets/brand/dispatch-header.svg" alt="SPECTRE WORKS DISPATCH" width="1280">
+# <img src="assets/brand/dispatch-bridge-lockup.svg" alt="SPECTRE WORKS DISPATCH" width="1280">
 
 DISPATCH is a source-available developer preview.
 
