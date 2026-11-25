@@ -28,7 +28,7 @@ set(icon "${root}/assets/brand/dispatch-icon.svg")
 configure_file(dashboard.S.in dashboard.S @ONLY)
 add_custom_command(OUTPUT "${dashboard}" "${dashboard}.gz"
     COMMAND "${Python3_EXECUTABLE}" "${web}/build_dashboard.py" --startos "${dashboard}" "${dashboard}.gz"
-    DEPENDS "${web}/build_dashboard.py" "${web}/index.html" "${icon}"
+    DEPENDS "${web}/build_dashboard.py" "${web}/index.html" "${icon}" "${root}/assets/brand/dispatch-masthead.svg"
     VERBATIM)
 set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/dashboard.S"
     PROPERTIES OBJECT_DEPENDS "${dashboard};${dashboard}.gz")

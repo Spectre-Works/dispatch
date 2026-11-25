@@ -17,9 +17,11 @@ def main():
     args = parser.parse_args()
 
     web = Path(__file__).resolve().parent
-    icon_path = "../../assets/brand/dispatch-icon.svg"
-    icon_url = b"data:image/svg+xml;base64," + base64.b64encode((web / icon_path).read_bytes())
-    data = (web / "index.html").read_bytes().replace(icon_path.encode(), icon_url)
+    data = (web / "index.html").read_bytes()
+    for name in ("dispatch-icon.svg", "dispatch-masthead.svg"):
+        asset = "../../assets/brand/" + name
+        url = b"data:image/svg+xml;base64," + base64.b64encode((web / asset).read_bytes())
+        data = data.replace(asset.encode(), url)
     if args.startos:
         data = data.replace(b'<html lang="en">', b'<html lang="en" data-edition="startos">', 1)
     args.html.write_bytes(data)

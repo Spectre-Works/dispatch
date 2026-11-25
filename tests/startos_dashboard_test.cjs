@@ -17,8 +17,8 @@ async function check() {
     await page.locator('#dashboard').waitFor({ state: 'visible' });
     const mark = page.locator('.wordmark img');
     await mark.evaluate(img => img.decode());
-    assert.equal(await page.locator('.wordmark h1').textContent(), 'DISPATCH');
-    assert.equal(await mark.getAttribute('src'), await page.locator('link[rel="icon"]').getAttribute('href'));
+    assert.equal(await page.getByRole('heading', { name: 'SPECTRE WORKS DISPATCH', level: 1 }).count(), 1);
+    assert.match(await mark.getAttribute('src'), /^data:image\/svg\+xml;base64,/);
     assert.match(await page.locator('#mode').textContent(), /Preview/);
     assert.equal(await page.locator('#control').isVisible(), false);
     await page.locator('[data-view="settings"]').click();

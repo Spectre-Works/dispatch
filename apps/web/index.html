@@ -24,10 +24,10 @@ body{min-height:100vh;margin:0;color:var(--ink);font:1rem/1.5 system-ui,sans-ser
 main{width:min(calc(100% - clamp(1.5rem,6vw,6rem)),82rem);margin:auto;padding:0 0 3.5rem}
 .masthead{display:flex;align-items:center;justify-content:space-between;gap:.85rem;
   padding:1.1rem 0;border-bottom:1px solid var(--line)}
-.wordmark,.masthead-actions{display:flex;align-items:center;gap:.85rem}
-.dispatch-mark{width:2.6rem;height:auto;flex:none;display:block}
-.brand,.eyebrow{font:600 .75rem/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-.wordmark h1{font-size:clamp(1.2rem,4vw,1.65rem);line-height:1;margin:.16rem 0 0;letter-spacing:-.045em}
+.masthead-actions{display:flex;align-items:center;gap:.85rem}
+.wordmark{width:11.5rem;max-width:100%;min-width:0;margin:0}
+.wordmark img{display:block;width:100%;height:auto}
+.eyebrow{font:600 .75rem/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 h2{font-size:1.5rem;margin:.25rem 0 .65rem;line-height:1.18;letter-spacing:-.025em}
 h3{font-size:1.12rem;margin:.35rem 0;line-height:1.25;letter-spacing:-.016em}
 section,article,details{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
@@ -547,8 +547,6 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
     width:100%;max-width:none;min-height:100vh;padding:0
   }
   main:has(#dashboard:not([hidden])) .masthead{position:sticky;top:0;height:100dvh;max-height:100dvh;overflow:auto;align-self:start;display:flex;flex-direction:column;align-items:stretch;justify-content:start;gap:0;border:0;border-right:1px solid var(--line);padding:1.6rem .85rem;background:linear-gradient(160deg,#1a2027 0%,#11161c 38%,#0e1217)}
-  .masthead .wordmark{gap:.65rem;padding:.1rem .23rem}
-  .masthead .wordmark h1{font-size:1.32rem}
   .workspace-nav{display:flex;flex-direction:column;margin:2.35rem 0 1rem;border:0;gap:.35rem}
   .workspace-nav button{justify-content:flex-start;min-height:46px;border-radius:6px;font-size:.92rem}
   .workspace-nav button[aria-current]{background:linear-gradient(110deg,#2b3949,#202831);box-shadow:inset 0 0 0 1px #889fbb35}
@@ -611,9 +609,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
 }
 @media(max-width:540px){
   main{width:calc(100% - 1.4rem)}
-  .masthead .wordmark{gap:.4rem}
-  .masthead .dispatch-mark{width:1.9rem}
-  .masthead .brand{font-size:.64rem}
+  .masthead .wordmark{width:clamp(8.5rem,40vw,11.5rem)}
   .masthead-actions{gap:.35rem;justify-content:flex-end;flex-direction:column;align-items:flex-end}
   .connection-status strong{font-size:.75rem}
   .connection-status{max-width:19ch;text-align:right}
@@ -634,10 +630,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
 </style>
 <main>
 <header class="masthead">
-  <div class="wordmark">
-    <img class="dispatch-mark" src="../../assets/brand/dispatch-icon.svg" width="128" height="128" alt="">
-    <div><div class="brand">SPECTRE WORKS</div><h1>DISPATCH</h1></div>
-  </div>
+  <h1 class="wordmark"><img src="../../assets/brand/dispatch-masthead.svg" width="184" height="37" alt="SPECTRE WORKS DISPATCH"></h1>
   <nav class="workspace-nav" aria-label="Workspace">
     <button type="button" data-view="overview" aria-current="page"><i class="nav-icon icon-overview" aria-hidden="true"></i>Overview</button>
     <button type="button" data-view="equipment"><i class="nav-icon icon-equipment" aria-hidden="true"></i>Equipment</button>

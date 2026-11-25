@@ -18,7 +18,7 @@ set(dispatch_html "${CMAKE_CURRENT_BINARY_DIR}/index.html")
 set(dispatch_gzip "${CMAKE_CURRENT_BINARY_DIR}/dispatch_index_html.gz")
 add_custom_command(OUTPUT "${dispatch_html}" "${dispatch_gzip}"
     COMMAND "${dispatch_python}" "${dispatch_web}/build_dashboard.py" "${dispatch_html}" "${dispatch_gzip}"
-    DEPENDS "${dispatch_web}/build_dashboard.py" "${dispatch_web}/index.html" "${dispatch_icon}"
+    DEPENDS "${dispatch_web}/build_dashboard.py" "${dispatch_web}/index.html" "${dispatch_icon}" "${dispatch_web}/../../assets/brand/dispatch-masthead.svg"
     VERBATIM)
 target_add_binary_data(${COMPONENT_LIB} "${dispatch_html}" TEXT)
 target_add_binary_data(${COMPONENT_LIB} "${dispatch_gzip}" BINARY)

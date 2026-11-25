@@ -7,7 +7,7 @@ RUN apk add --no-cache build-base=0.5-r3 gcc=14.2.0-r6 binutils=2.44-r3 \
     libevent-dev=2.1.13-r0 libevent-static=2.1.13-r0 zlib-dev=1.4-r0 zlib-static=1.4-r0
 WORKDIR /source
 COPY apps apps
-COPY assets/brand/dispatch-icon.svg assets/brand/dispatch-icon.svg
+COPY assets/brand/dispatch-icon.svg assets/brand/dispatch-masthead.svg assets/brand/
 COPY core core
 COPY integrations integrations
 COPY .startos-inputs/http-parser /http-parser

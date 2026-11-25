@@ -4,8 +4,8 @@
 # DISPATCH dashboard
 
 [index.html](index.html) contains the shared HTML, CSS, and JavaScript.
-Both builds embed the [DISPATCH icon](../../assets/brand/dispatch-icon.svg)
-in the page for the sidebar and favicon. Edit the page here, then
+Both builds embed the [sidebar lockup](../../assets/brand/dispatch-masthead.svg) and
+[favicon](../../assets/brand/dispatch-icon.svg) in the page. Edit the page here, then
 build and flash the application to exercise it with real controller routes.
 The browser renders status and sends commands. The controller evaluates the plan
 and acts on equipment.
