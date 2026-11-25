@@ -393,7 +393,7 @@ static void energy_status(httpd_req_t *request)
     const dispatch_reason paid = energy->paid_permission;
     add(request, ",\"paidOpen\":%s,\"paidReason\":\"%s\"",
         truth(dispatch_paid_covering(paid)), dispatch_explanation(paid));
-    const bool power_known = decision->load_known && (decision->fresh || !decision->configured);
+    const bool power_known = dispatch_running_load_known(decision) && (decision->fresh || !decision->configured);
     nullable(request, "solarCoveredWatts", power_known, energy->solar_covered_watts);
     nullable(request, "paidWatts", power_known, decision->running_watts - energy->solar_covered_watts);
     const daylight_settings *daylight = &energy->daylight;

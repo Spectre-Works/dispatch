@@ -21,9 +21,14 @@ int64_t dispatch_solar_headroom(const dispatch_generation *solar)
     return (int64_t)budget - solar->running_watts - solar->committed_watts;
 }
 
+bool dispatch_running_load_known(const dispatch_generation *solar)
+{
+    return solar->load_known || solar->load_retained;
+}
+
 bool dispatch_solar_deficit(const dispatch_generation *solar)
 {
-    return solar->configured && solar->fresh && solar->load_known &&
+    return solar->configured && solar->fresh && dispatch_running_load_known(solar) &&
         dispatch_solar_coverage(solar->production, solar->reserve, solar->running_watts) < solar->running_watts;
 }
 
@@ -108,14 +113,13 @@ dispatch_reason dispatch_bridge_permission(const dispatch_inputs *in)
     const dispatch_daylight_bridge *bridge = &solar->bridge;
     if (!bridge->enabled) return DISPATCH_PAID_DISABLED;
     if (!bridge->daylight) return DISPATCH_DAYLIGHT_DARK;
-    const bool retained_off = bridge->unobserved_watts != 0;
-    if (!solar->load_known && !retained_off) return DISPATCH_DAYLIGHT_EVIDENCE;
-    if (!solar->running_watts || (solar->fresh && solar->load_known && !dispatch_solar_deficit(solar)))
+    if (!dispatch_running_load_known(solar)) return DISPATCH_DAYLIGHT_EVIDENCE;
+    if (!solar->running_watts || (solar->fresh && !dispatch_solar_deficit(solar)))
         return DISPATCH_DAYLIGHT_WAIT;
     if (!bridge->seconds) return DISPATCH_DAYLIGHT_EXPIRED;
     const uint32_t watts = solar->running_watts + solar->committed_watts + bridge->unobserved_watts;
     const uint64_t watt_seconds = (uint64_t)watts * PAID_SWITCH_RESERVE_SECONDS + bridge->unobserved_watt_seconds;
-    const dispatch_reason budget = budget_reserve(in, in->accounting_valid || retained_off, watt_seconds);
+    const dispatch_reason budget = budget_reserve(in, in->accounting_valid || bridge->unobserved_watts, watt_seconds);
     if (budget == DISPATCH_PAID_RESERVE) return DISPATCH_DAYLIGHT_BUDGET;
     return budget == DISPATCH_WINDOW_OPEN ? DISPATCH_DAYLIGHT_BRIDGE : budget;
 }
@@ -178,7 +182,7 @@ void dispatch_plan(const dispatch_inputs *in, dispatch_decision out[DISPATCH_LIM
     const bool paid = permission == DISPATCH_WINDOW_OPEN;
     const bool bridge = permission == DISPATCH_DAYLIGHT_BRIDGE;
     const bool source = solar->configured;
-    const bool usable = source && solar->fresh && solar->load_known;
+    const bool usable = source && solar->fresh && dispatch_running_load_known(solar);
     const bool deficit = dispatch_solar_deficit(solar);
     const bool can_cover_transition = dispatch_paid_room(in, 0);
     const bool grace = source && !usable && in->source_grace && can_cover_transition;

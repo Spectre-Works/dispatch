@@ -57,7 +57,7 @@ typedef struct {
     uint16_t reserve, shed_margin, start_watts[DISPATCH_LIMIT];
     uint16_t restart_seconds, shed_wait_seconds;
     uint8_t reserved_start_mask;
-    bool configured, fresh, sustained, load_known, low, shed_needs_reading;
+    bool configured, fresh, sustained, load_known, load_retained, low, shed_needs_reading;
     dispatch_daylight_bridge bridge;
 } dispatch_generation;
 
@@ -180,6 +180,7 @@ dispatch_gap_forecast dispatch_daylight_forecast(const dispatch_inputs *in, uint
 bool dispatch_paid_room(const dispatch_inputs *in, uint32_t extra_watts);
 bool dispatch_paid_covering(dispatch_reason permission);
 int64_t dispatch_solar_headroom(const dispatch_generation *solar);
+bool dispatch_running_load_known(const dispatch_generation *solar);
 bool dispatch_solar_deficit(const dispatch_generation *solar);
 uint32_t dispatch_solar_coverage(uint32_t production, uint32_t reserve, uint32_t draw);
 uint32_t dispatch_solar_restart_remaining(const dispatch_inputs *in, unsigned i);

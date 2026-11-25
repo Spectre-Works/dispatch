@@ -1808,6 +1808,15 @@ static bool solar_first_fresh(uint32_t now)
     return solar_reply_fresh(now) && (solar.reading.watts <= state.follow.reserve || solar_control_fresh(now));
 }
 
+static bool recently_off(unsigned i, uint32_t now)
+{
+    const device_runtime *device = &runtime[i];
+    const device_view *view = &device->view;
+    return view->observed && !view->outlet.on && network_online() && device->connection_epoch == network_epoch() &&
+        now - view->outlet_time <= SOURCE_GRACE_SECONDS && device->pending != DISPATCH_ON &&
+        !(state.hold_on & (1u << i)) && !testing_outlet(i);
+}
+
 static void accrue_solar_credit(uint32_t now)
 {
     const bool measured = operating_grid();
@@ -1828,7 +1837,10 @@ static void accrue_solar_credit(uint32_t now)
     for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
         if (!state.settings.device[i].shelly.ip[0]) continue;
         const device_runtime *device = &runtime[i];
-        if (!fresh(device, now)) return;
+        if (!fresh(device, now)) {
+            if (recently_off(i, now)) continue;
+            return;
+        }
         if (!device->view.outlet.on) continue;
         if (!device->view.outlet.power_known) return;
         draw[i] = (uint32_t)device->view.outlet.watts;
@@ -1905,15 +1917,6 @@ static bool generation_load(dispatch_inputs *in, unsigned i, const dispatch_outl
     return true;
 }
 
-static bool recently_off(unsigned i, uint32_t now)
-{
-    const device_runtime *device = &runtime[i];
-    const device_view *view = &device->view;
-    return view->observed && !view->outlet.on && view->outlet_result != SHELLY_IDENTITY &&
-        network_online() && device->connection_epoch == network_epoch() && now - view->outlet_time <= SOURCE_GRACE_SECONDS &&
-        device->pending != DISPATCH_ON && !(state.hold_on & (1u << i)) && !testing_outlet(i);
-}
-
 static dispatch_inputs inputs(uint32_t now, time_t utc_now)
 {
     const bool grid_source = operating_grid();
@@ -1972,7 +1975,7 @@ static dispatch_inputs inputs(uint32_t now, time_t utc_now)
         }
     }
     bool powered = false;
-    bool gap_load_known = true, gap_accounting_valid = in.accounting_valid;
+    bool running_load_known = true, gap_accounting_valid = in.accounting_valid;
     uint32_t unobserved_watts = 0, unobserved_watt_seconds = 0;
     for (unsigned i = 0; i < DISPATCH_LIMIT; ++i) {
         const device_runtime *device = &runtime[i];
@@ -1987,9 +1990,9 @@ static dispatch_inputs inputs(uint32_t now, time_t utc_now)
         in.solar_off_since[i] = device->solar_off_since;
         const slot_coordination *slot = &state.coordination[i];
         const bool load_known = generation_load(&in, i, &in.outlet[i], now);
-        const bool retained_off = in.solar.bridge.daylight && present && !in.outlet[i].fresh && recently_off(i, now);
+        const bool retained_off = present && !in.outlet[i].fresh && recently_off(i, now);
         in.solar.load_known &= load_known;
-        gap_load_known &= load_known || retained_off;
+        running_load_known &= load_known || retained_off;
         if (retained_off) {
             unobserved_watts += DISPATCH_METER_CHANNEL_WATTS;
             unobserved_watt_seconds += DISPATCH_METER_CHANNEL_WATTS * (now - device->view.outlet_time);
@@ -2005,9 +2008,10 @@ static dispatch_inputs inputs(uint32_t now, time_t utc_now)
             gap_accounting_valid &= anchored;
         }
     }
-    if (gap_load_known && (gap_accounting_valid || !in.policy.daily_allowance_millicents)) {
-        // A recent off reading can protect running miners through a short dropout.
-        // Reserve for possible unseen draw until the meter reports again.
+    in.solar.load_retained = running_load_known && unobserved_watts != 0;
+    if (in.solar.bridge.daylight && in.solar.load_retained &&
+        (gap_accounting_valid || !in.policy.daily_allowance_millicents)) {
+        // If there is a solar shortfall, reserve for possible unseen draw while buying power.
         in.solar.bridge.unobserved_watts = unobserved_watts;
         in.solar.bridge.unobserved_watt_seconds = unobserved_watt_seconds;
     }
@@ -2055,8 +2059,8 @@ static void update_daylight_bridge(uint32_t now)
         reason = dispatch_paid_permission(&in);
         const bool same_day = state.bridge_started &&
             dispatch_solar_day(state.bridge_started, state.daylight.longitude_e4) == daylight_cache.day;
-        const bool recovered = in.solar.fresh && in.solar.sustained && in.solar.load_known && in.solar.running_watts &&
-            dispatch_solar_headroom(&in.solar) >= 0;
+        const bool recovered = in.solar.fresh && in.solar.sustained && dispatch_running_load_known(&in.solar) &&
+            in.solar.running_watts && dispatch_solar_headroom(&in.solar) >= 0;
         active = in.solar.bridge.daylight && !recovered && reason == DISPATCH_DAYLIGHT_BRIDGE;
         const bool opening = !same_day && in.solar.bridge.daylight && reason == DISPATCH_DAYLIGHT_BRIDGE;
         if (in.solar.bridge.daylight && (opening || (same_day && recovered))) {
@@ -2636,7 +2640,7 @@ static operation_next next_operation(const dispatch_inputs *in, const dispatch_d
             consider_next(&next, NEXT_PAID_OPEN, DISPATCH_LIMIT, until_minute(in->operating.paid_start, minute, utc));
             consider_next(&next, NEXT_PAID_CLOSE, DISPATCH_LIMIT, until_minute(in->operating.paid_end, minute, utc));
         }
-        if (in->source_grace && (!in->solar.fresh || !in->solar.load_known))
+        if (in->source_grace && (!in->solar.fresh || !dispatch_running_load_known(&in->solar)))
             consider_next(&next, NEXT_SOURCE_GRACE_END, DISPATCH_LIMIT,
                           SOURCE_GRACE_SECONDS + 1 - (in->now - last_usable_power));
         for (unsigned i = 0; i < DISPATCH_RATE_WINDOWS; ++i) {
@@ -2762,7 +2766,7 @@ void installation_read(installation_view *view)
             view->energy.sunset_minute = sunset;
         } else view->energy.daylight_kind = DAYLIGHT_UNKNOWN;
     }
-    if (in.solar.configured && in.solar.fresh && in.solar.load_known) {
+    if (in.solar.configured && in.solar.fresh && dispatch_running_load_known(&in.solar)) {
         view->energy.solar_covered_watts = dispatch_solar_coverage(in.solar.production, in.solar.reserve, in.solar.running_watts);
     }
     view->energy.grid.reserve = state.grid.reserve;
@@ -3044,8 +3048,9 @@ static void observation(unsigned index, shelly_result result, const shelly_sampl
 {
     device_runtime *d = &runtime[index];
     device_view *v = &d->view;
-    const bool recent = v->observed && d->connection_epoch == network_epoch() &&
-        now - v->outlet_time <= OBSERVATION_TTL;
+    const uint32_t connection = network_epoch();
+    const bool same_connection = d->connection_epoch == connection;
+    const bool recent = v->observed && same_connection && now - v->outlet_time <= OBSERVATION_TTL;
     bool was_fresh = fresh(d, now);
     if (outlet_update && (!was_fresh || result != SHELLY_OK || !outlet->on)) {
         d->power_checked = 0;
@@ -3081,7 +3086,7 @@ static void observation(unsigned index, shelly_result result, const shelly_sampl
         }
     }
     if (outlet_update) d->observation_day = day;
-    if (d->connection_epoch != network_epoch()) {
+    if (!same_connection) {
         d->destination = DESTINATION_UNKNOWN;
         d->next_destination = 0;
     }
@@ -3096,7 +3101,7 @@ static void observation(unsigned index, shelly_result result, const shelly_sampl
             d->zero_since = now ? now : 1;
         }
     }
-    if (outlet_update) d->connection_epoch = network_epoch();
+    if (outlet_update) d->connection_epoch = connection;
     if (outlet_update && result == SHELLY_OK) {
         const bool changed = v->observed && outlet->on != v->outlet.on;
         // A recovered reading of an already off outlet is not a new stop.
@@ -3144,6 +3149,7 @@ static void observation(unsigned index, shelly_result result, const shelly_sampl
             record(index, EVENT_OUTLET_LOST);
         }
         d->startup_tracking = false;
+        if (!same_connection || result == SHELLY_IDENTITY) v->observed = false;
     }
     if (outlet_update) v->outlet_result = result;
     if (miner && (!v->miner_polled || v->miner.responding != miner->responding) && (miner->responding || !work_paused)) {

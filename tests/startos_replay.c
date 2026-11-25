@@ -197,16 +197,22 @@ static void daylight_outlet_dropout(void)
     state.daylight = (daylight_settings){.latitude_e4 = 397392, .longitude_e4 = -1049903, .minutes = 30, .enabled = true};
     state.solar = (solar_settings){.ip = "10.241.0.1", .port = 8899};
     state.settings.policy.daily_allowance_millicents = 22000;
-    for (unsigned i = 0; i < 2; ++i) state.first_run[i] = RUN_MAPPING;
+    state.follow.reserve = 500;
+    state.follow.start_watts[2] = 200;
+    state.enabled = true;
+    for (unsigned i = 0; i < 3; ++i) state.first_run[i] = RUN_MAPPING;
     state.settings.device[0].shelly = (shelly_target){.ip = "10.241.0.1", .identity = "shellyplusplugsus-000000000001"};
     state.settings.device[1].shelly = (shelly_target){.ip = "10.241.0.2", .identity = "shellyplusplugsus-000000000002"};
+    state.settings.device[2].shelly = (shelly_target){.ip = "10.241.0.3", .identity = "shellyplusplugsus-000000000003"};
     const dispatch_daylight sun = daylight_at(epoch);
     const uint32_t spare_observed = sun.sunrise - epoch + 7200;
     const shelly_sample spare = {.power_known = true, .energy_known = true, .total_mwh = 1000};
     elapsed = spare_observed;
     observation(1, SHELLY_OK, &spare, NULL, true, elapsed);
+    observation(2, SHELLY_OK, &spare, NULL, true, elapsed);
     sample(elapsed, 700, 1000000);
     runtime[0].since = elapsed - DISPATCH_MIN_ON;
+    runtime[2].since = elapsed - DISPATCH_MIN_OFF;
     solar.result = ECU_OK;
     solar.sampled = solar.sustained = true;
     solar.epoch = network_epoch();
@@ -217,30 +223,73 @@ static void daylight_outlet_dropout(void)
     dispatch_inputs in = inputs(elapsed, replay_clock());
     decide(&in, decisions, replay_clock());
     assert(in.solar.bridge.daylight && !sunset_history.cutoff && decisions[0].reason == DISPATCH_SOLAR_COVERED);
+    assert(decisions[2].action == DISPATCH_ON && decisions[2].reason == DISPATCH_SOLAR_START);
 
-    sample(elapsed + 5, 700, 1000100);
+    sample(elapsed + 5, 700, 1000972);
     observation(1, SHELLY_NETWORK, &spare, NULL, true, elapsed);
+    timeline_flush_events();
+    const uint32_t events_after_miss = timeline_event_cursor();
+    timeline_event event;
+    assert(events_after_miss && timeline_event_read(events_after_miss - 1, &event));
+    assert(event.slot == 1 && event.kind == EVENT_OUTLET_LOST);
+    update_solar_shed_timer(elapsed);
+    update_daylight_bridge(elapsed);
+    timeline_flush_events();
+    assert(!bridge_active && !state.bridge_started && !paid_authority);
+    assert(timeline_event_cursor() == events_after_miss);
+    sample(elapsed + 5, 700, 1001944);
+    assert(!state.budget.used_nano_cents && !telemetry_miner(0)->paid_mwh);
     in = inputs(elapsed, replay_clock());
     decide(&in, decisions, replay_clock());
-    assert(in.solar.fresh && !in.solar.load_known && !in.accounting_valid && !in.outlet[1].fresh);
+    assert(in.solar.fresh && !in.solar.load_known && in.solar.load_retained && !in.accounting_valid && !in.outlet[1].fresh);
     assert(in.solar.bridge.unobserved_watts == DISPATCH_METER_CHANNEL_WATTS);
-    assert(decisions[0].action == DISPATCH_KEEP && decisions[0].reason == DISPATCH_DAYLIGHT_BRIDGE);
+    assert(dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_WAIT);
+    assert(decisions[0].action == DISPATCH_KEEP && decisions[0].reason == DISPATCH_SOLAR_COVERED);
     assert(decisions[1].action == DISPATCH_KEEP && decisions[1].reason == DISPATCH_UNOBSERVED);
+    assert(decisions[2].action == DISPATCH_KEEP && decisions[2].reason == DISPATCH_SOLAR_LOAD_UNKNOWN);
+    installation_read(&view);
+    assert(view.energy.solar_covered_watts == 700);
+
+    solar.reading.watts = solar.supported_watts = 1100;
+    update_solar_shed_timer(elapsed);
+    update_daylight_bridge(elapsed);
+    timeline_flush_events();
+    assert(bridge_active && state.bridge_started == (uint64_t)replay_clock() && paid_authority == TIMELINE_PAID_GAP);
+    assert(timeline_event_cursor() == events_after_miss + 1);
+    assert(timeline_event_read(events_after_miss, &event) && event.kind == EVENT_DAYLIGHT_BRIDGE_STARTED);
+    in = inputs(elapsed, replay_clock());
     in.used_nano_cents = 21000000000ULL;
     assert(dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_BUDGET);
     state.budget.gap_mask = 1u << 1;
     in = inputs(elapsed, replay_clock());
-    assert(!dispatch_paid_covering(dispatch_paid_permission(&in)));
+    assert(dispatch_paid_permission(&in) == DISPATCH_BUDGET_UNKNOWN);
     state.budget.gap_mask = 0;
+    solar.reading.watts = solar.supported_watts = 1500;
+    update_daylight_bridge(elapsed);
+    assert(!bridge_active && !state.bridge_started);
+
     runtime[1].pending = DISPATCH_ON;
     in = inputs(elapsed, replay_clock());
     assert(dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_EVIDENCE);
     runtime[1].pending = DISPATCH_KEEP;
 
-    sample(spare_observed + SOURCE_GRACE_SECONDS + 1, 700, 1012000);
+    elapsed = spare_observed + SOURCE_GRACE_SECONDS;
+    observation(2, SHELLY_OK, &spare, NULL, true, elapsed);
+    sample(elapsed, 700, 1010000);
+    assert(inputs(elapsed, replay_clock()).solar.load_retained);
+    sample(elapsed + 1, 700, 1010200);
     in = inputs(elapsed, replay_clock());
-    assert(!in.solar.bridge.unobserved_watts && dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_EVIDENCE);
-    puts("Calculated daylight keeps a running miner on through a short idle outlet dropout");
+    assert(!in.solar.load_retained && dispatch_paid_permission(&in) == DISPATCH_DAYLIGHT_EVIDENCE);
+
+    observation(1, SHELLY_OK, &spare, NULL, true, elapsed);
+    observation(1, SHELLY_IDENTITY, &spare, NULL, true, elapsed);
+    observation(1, SHELLY_NETWORK, &spare, NULL, true, elapsed);
+    assert(!inputs(elapsed, replay_clock()).solar.load_retained);
+    observation(1, SHELLY_OK, &spare, NULL, true, elapsed);
+    ++runtime[1].connection_epoch;
+    observation(1, SHELLY_NETWORK, &spare, NULL, true, elapsed);
+    assert(!inputs(elapsed, replay_clock()).solar.load_retained);
+    puts("An outlet last confirmed off keeps solar coverage until its evidence expires");
 }
 
 int main(int argc, char **argv)

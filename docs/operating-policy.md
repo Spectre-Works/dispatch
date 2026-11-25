@@ -54,13 +54,18 @@ DISPATCH applies their median offset to today's calculated sunset, up to
 history is insufficient, after clearing Activity, or after replacing the
 solar production source until new history qualifies.
 
-Within daylight hours, gap coverage can keep observed running miners on
+DISPATCH can use the last confirmed off state of an unreadable outlet for
+up to 60 seconds from the last successful observation. A possible on command,
+identity mismatch, or network reconnect invalidates that evidence. With fresh
+energy readings, DISPATCH continues estimating solar coverage for the running
+miners. If those readings show a shortfall, daylight gap coverage can still
+use paid power and reserves for possible draw on the unreadable outlet.
+
+Within daylight hours, gap coverage can also keep observed running miners on
 while the energy source is unavailable. For the allowance, DISPATCH counts
-draw without measured solar coverage as paid. A different outlet last seen
-off can miss a reading without blocking this permission for up to 60 seconds
-from its latest successful observation. DISPATCH reserves for possible draw
-on that outlet. The gap timer, allowance, mining hours, and Quiet Hours still
-apply. Solar-dependent starts require fresh energy and outlet readings.
+draw without measured solar coverage as paid. The gap timer, allowance,
+mining hours, and Quiet Hours still apply. Solar-dependent starts and preset
+increases that rely on solar require fresh energy and outlet readings.
 
 ## Presets
 
