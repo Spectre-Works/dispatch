@@ -54,3 +54,30 @@ bool dispatch_in_daylight(dispatch_daylight sun, int64_t epoch)
 {
     return sun.kind == DAYLIGHT_ALL_DAY || (sun.kind == DAYLIGHT_RISE_SET && epoch >= sun.sunrise && epoch < sun.sunset);
 }
+
+bool dispatch_sunset_shift(int16_t *offsets, unsigned count, int16_t *shift)
+{
+    enum { MIN_EVENINGS = 3, AGREEMENT_SECONDS = 30 * 60 };
+    if (count < MIN_EVENINGS || count > DISPATCH_SUNSET_DAYS) return false;
+    for (unsigned i = 1; i < count; ++i) {
+        const int16_t offset = offsets[i];
+        unsigned j = i;
+        while (j && offsets[j - 1] > offset) {
+            offsets[j] = offsets[j - 1];
+            --j;
+        }
+        offsets[j] = offset;
+    }
+    unsigned first = 0, best_first = 0, best_count = 0;
+    for (unsigned last = 0; last < count; ++last) {
+        while (offsets[last] - offsets[first] > AGREEMENT_SECONDS) ++first;
+        const unsigned matching = last - first + 1;
+        if (matching >= best_count) {
+            best_first = first;
+            best_count = matching;
+        }
+    }
+    if (best_count < MIN_EVENINGS || best_count <= count / 2) return false;
+    *shift = offsets[best_first + best_count / 2];
+    return true;
+}

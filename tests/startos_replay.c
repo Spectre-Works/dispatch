@@ -115,10 +115,92 @@ static void replay(bool restart)
     }
 }
 
+static void archive_evening(unsigned ago, int shift, int missing_after_cutoff, bool rebound)
+{
+    const int32_t latitude = state.daylight.latitude_e4, longitude = state.daylight.longitude_e4;
+    const dispatch_daylight sun = dispatch_sun_times(dispatch_solar_day(epoch, longitude) - ago, latitude, longitude);
+    const unsigned period = timeline_period(1), ratio = period / TIMELINE_SECONDS;
+    const uint32_t cutoff = (sun.sunset + shift + period / 2) / period;
+    const uint32_t end = (sun.sunset + DISPATCH_SUNSET_MAX_SHIFT + 1800 + period - 1) / period;
+    for (uint32_t row = (sun.sunset - DISPATCH_SUNSET_MAX_SHIFT) / period; row < end; ++row) {
+        if (missing_after_cutoff >= 0 && row == cutoff + (uint32_t)missing_after_cutoff) continue;
+        const uint16_t production = row < cutoff || (rebound && row == end - 1) ? 30 : 0;
+        timeline_sample sample = {.solar_decawatts = production, .solar_min = production, .solar_max = production,
+            .solar_count = 30, .grid_decawatts = TIMELINE_UNKNOWN_GRID};
+        for (unsigned i = 0; i < ratio; ++i) timeline_sample_write(row * ratio + i, &sample);
+        timeline_complete((row + 1) * ratio);
+    }
+}
+
+static void learn_sunset(void)
+{
+    assert(state.daylight.enabled);
+    // The worker reads at most one 15-minute row per pass.
+    for (unsigned i = 0; i < 160; ++i) sunset_history_tick(epoch);
+}
+
+static void sunset_replay(bool restart)
+{
+    if (restart) {
+        assert(state.solar_history_tag == SOLAR_HISTORY_TAG && state.solar_history_from == epoch);
+        assert(!strcmp(state.solar.ip, "10.241.0.2"));
+        learn_sunset();
+        assert(!sunset_history.cutoff);
+        return;
+    }
+    state.daylight = (daylight_settings){.latitude_e4 = 397392, .longitude_e4 = -1049903, .minutes = 30, .enabled = true};
+    state.solar = (solar_settings){.ip = "10.241.0.1", .port = 8899};
+    const dispatch_daylight calculated = daylight_at(epoch);
+    archive_evening(6, -2400, -1, true);
+    archive_evening(5, -2400, 0, false);
+    archive_evening(4, -4800, -1, false);
+    archive_evening(3, -2400, 3, false);
+    archive_evening(2, -2400, -1, false);
+    archive_evening(1, -2400, -1, false);
+    learn_sunset();
+    bool learned;
+    dispatch_daylight adjusted = daylight_gap_at(epoch, &learned);
+    assert(learned && sunset_history.count == 4 && adjusted.sunrise == calculated.sunrise);
+    assert(adjusted.sunset >= calculated.sunset - 2850 && adjusted.sunset <= calculated.sunset - 1950);
+    const dispatch_inputs before = inputs(0, adjusted.sunset - 90);
+    assert(before.solar.bridge.daylight && before.solar.bridge.seconds == 90 && before.solar.bridge.seconds_to_sunset == 90);
+    const dispatch_decision decisions[DISPATCH_LIMIT] = {0};
+    const operation_next next = next_operation(&before, decisions, adjusted.sunset - 90);
+    assert(next.kind == NEXT_SUNSET && next.seconds == 90);
+    assert(!inputs(0, adjusted.sunset).solar.bridge.daylight);
+    elapsed = adjusted.sunset - 90 - epoch;
+    installation_read(&view);
+    uint32_t minute;
+    assert(local_minute(adjusted.sunset, &minute));
+    assert(view.energy.sunset_learned && view.energy.sunset_minute == minute);
+
+    elapsed = 0;
+    assert(installation_accounting(ACCOUNTING_CLEAR_ACTIVITY) == ESP_OK);
+    assert(daylight_gap_at(epoch, &learned).sunset == calculated.sunset && !learned);
+    for (unsigned ago = 3; ago; --ago) archive_evening(ago, 2400, -1, false);
+    learn_sunset();
+    adjusted = daylight_gap_at(epoch, &learned);
+    assert(learned && adjusted.sunset >= calculated.sunset + 1950 && adjusted.sunset <= calculated.sunset + 2850);
+    assert(inputs(0, calculated.sunset).solar.bridge.daylight);
+    assert(!inputs(0, adjusted.sunset).solar.bridge.daylight);
+
+    solar_settings replacement = state.solar;
+    strcpy(replacement.ip, "10.241.0.2");
+    assert(installation_solar(&replacement) == ESP_OK);
+    assert(daylight_gap_at(epoch, &learned).sunset == calculated.sunset && !learned);
+    learn_sunset();
+    assert(!sunset_history.cutoff);
+    puts("Learned sunset drives daylight gap schedule, countdown and cutoff");
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3 || !preview_storage_open(argv[1])) return 1;
     installation_start();
+    if (!strcmp(argv[2], "sunset") || !strcmp(argv[2], "sunset-restart")) {
+        sunset_replay(!strcmp(argv[2], "sunset-restart"));
+        return 0;
+    }
     if (!strcmp(argv[2], "arm-restored-command")) {
         assert(state.settings.device[0].shelly.ip[0]);
         state.enabled = true;

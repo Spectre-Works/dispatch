@@ -157,6 +157,8 @@ def parity(build, directory):
         replay = build / f"dispatch-{edition}-replay"
         data = directory / edition
         result = b"".join(subprocess.check_output((replay, data, stage)) for stage in ("replay", "restart"))
+        result += b"".join(subprocess.check_output((replay, directory / f"sunset-{edition}", stage))
+                           for stage in ("sunset", "sunset-restart"))
         outputs.append(result)
     assert outputs[0] == outputs[1], outputs
     print(outputs[0].decode(), end="", flush=True)

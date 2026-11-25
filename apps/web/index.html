@@ -1067,7 +1067,7 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
             </div>
           </div>
           <div><label class="check-label"><input name="gapCoverage" type="checkbox">Keep running miners on through daylight gaps</label>
-            <p class="muted">Covers dips between sunrise and sunset. Starts need available solar or permission from the paid mining window.</p>
+            <p class="muted">Covers dips from estimated sunrise to the evening cutoff. DISPATCH adjusts the cutoff when recent solar production shows a consistent pattern. Starts need available solar or permission from the paid mining window.</p>
             <div id="plan-gap-fields" hidden>
               <label>Cover gaps up to (minutes)<input name="gapMinutes" type="number" min="5" max="60" value="20" required></label>
               <div class="grid">
@@ -2262,8 +2262,9 @@ function daylightWindow(daylight, clock) {
   if (kind === 2) return {start:0, minutes:1440, tone:'daylight', hours:'Sun above the horizon all day'};
   if (kind === 3) return {start:0, minutes:0, tone:'daylight-dark', hours:'Sun below the horizon all day'};
   if (kind === 1 && sunrise != null && sunset != null) {
+    const cutoff = daylight.sunsetLearned ? 'Panel-based cutoff' : 'Est. sunset';
     return {start:sunrise, minutes:(sunset - sunrise + 1440) % 1440, tone:'daylight',
-      hours:'Est. sunrise\u00a0' + timeText(sunrise) + ' · sunset\u00a0' + timeText(sunset) + ' local'};
+      hours:'Est. sunrise\u00a0' + timeText(sunrise) + ' · ' + cutoff + '\u00a0' + timeText(sunset) + ' local'};
   }
   return {hours:!daylight.configured ? 'Set a location to estimate daylight' :
     !clock ? 'Awaiting controller clock' : 'Sunrise and sunset estimates unavailable'};
@@ -2307,8 +2308,8 @@ function renderPlanEnergy(follow, grid) {
     metrics.append(
       labelValue('Allowance at current draw', runwayText(estimate.runwaySeconds),
         reading(estimate.paidWatts, 'W', 0) + ' paid at the current rate'),
-      labelValue('Time until sunset', runwayText(estimate.sunsetSeconds),
-        short ? 'The allowance may run out before sunset.' : 'The allowance is projected to reach sunset.'));
+      labelValue('Time until evening cutoff', runwayText(estimate.sunsetSeconds),
+        short ? 'The allowance may run out before the cutoff.' : 'The allowance is projected to reach the cutoff.'));
     if (estimate.afterSeconds != null) metrics.append(labelValue('With the proposed preset',
       estimate.afterWatts ? runwayText(estimate.afterSeconds) : 'No paid draw',
       reading(estimate.afterWatts, 'W', 0) + ' paid at the current rate'));
@@ -3696,7 +3697,7 @@ async function loadPlanScenarios(draft, weekend = false) {
     const response = await api('config', fields);
     if (request !== scenarioRequest || step !== 'review') return;
     const scenarios = JSON.parse(response);
-    const titles = ['Surplus for a start', 'Daylight dip', 'After sunset', 'Quiet Hours', 'Allowance used',
+    const titles = ['Surplus for a start', 'Daylight dip', 'After the evening cutoff', 'Quiet Hours', 'Allowance used',
       'Energy source offline', 'Paid window open'];
     const actions = ['', 'Switch off', 'Switch on', 'Lower preset'];
     status.textContent = 'Example conditions use your paired equipment. The offline case shows what happens after the grace period.';

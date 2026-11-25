@@ -113,6 +113,7 @@ typedef struct {
     daylight_settings daylight;
     dispatch_daylight_kind daylight_kind;
     uint16_t sunrise_minute, sunset_minute;
+    bool sunset_learned;
     uint32_t solar_covered_watts;
     grid_settings grid;
     ecu_reading production;

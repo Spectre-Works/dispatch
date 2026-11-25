@@ -404,7 +404,7 @@ static void energy_status(httpd_req_t *request)
         (unsigned long)decision->bridge.seconds, daylight->latitude_e4 / 10000.0, daylight->longitude_e4 / 10000.0);
     nullable(request, "sunrise", energy->daylight_kind == DAYLIGHT_RISE_SET, energy->sunrise_minute);
     nullable(request, "sunset", energy->daylight_kind == DAYLIGHT_RISE_SET, energy->sunset_minute);
-    add(request, "}");
+    add(request, ",\"sunsetLearned\":%s}", truth(energy->sunset_learned));
     const dispatch_gap_forecast *forecast = &energy->gap_budget;
     const dispatch_gap_forecast *after = &energy->gap_budget_after;
     if (forecast->known) {

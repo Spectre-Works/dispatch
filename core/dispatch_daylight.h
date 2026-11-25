@@ -13,9 +13,12 @@ typedef struct {
     dispatch_daylight_kind kind;
 } dispatch_daylight;
 
+enum { DISPATCH_SUNSET_DAYS = 7, DISPATCH_SUNSET_MAX_SHIFT = 90 * 60 };
+
 bool dispatch_solar_location_valid(int32_t latitude_e4, int32_t longitude_e4);
 int64_t dispatch_solar_day(int64_t epoch, int32_t longitude_e4);
 dispatch_daylight dispatch_sun_times(int64_t day, int32_t latitude_e4, int32_t longitude_e4);
 bool dispatch_in_daylight(dispatch_daylight sun, int64_t epoch);
+bool dispatch_sunset_shift(int16_t *offsets, unsigned count, int16_t *shift);
 
 #endif

@@ -36,6 +36,8 @@ enum { INSTALLATION_VERSION = 30, LEGACY_VERSION = 29, HOME_METER_VERSION = 28, 
        SOLAR_START_RESERVATION = 30, BRIDGE_SOLAR_EVIDENCE_SECONDS = 600 };
 enum { PRESET_BINDING_BYTES = 192 };
 enum { ACTIVITY_GENERATION_TAG = 0x44534147 };
+enum { SOLAR_HISTORY_TAG = 0x5348, TELEMETRY_SECONDS = 10, SUNSET_HISTORY_TIER = 1,
+       SUNSET_DARK_SECONDS = 30 * 60, SUNSET_LIT_DECAWATTS = 2 };
 enum { TEST_CONFIRM_SECONDS = 20, TEST_HASH_WARMUP = 30, TEST_METER_WARMUP = 120,
        TEST_HASH_STABLE = 15, TEST_METER_STABLE = 30 };
 
@@ -160,6 +162,9 @@ typedef struct {
     uint64_t bridge_started;
     _Alignas(uint64_t) dispatch_power_test_result power_test[DISPATCH_LIMIT];
     uint8_t test_armed;
+    // Keep the activity generation and the rest of the journal at their existing offsets.
+    uint16_t solar_history_tag;
+    uint32_t solar_history_from;
     // Reuse the aligned reserved bytes without changing the journal layout.
     _Alignas(uint64_t) uint32_t activity_generation;
     uint32_t activity_generation_tag;
@@ -178,6 +183,8 @@ _Static_assert(sizeof(grid_settings) == 136 && offsetof(grid_settings, direction
 _Static_assert(offsetof(legacy_installation, first_run) == 1816, "Installation equipment layout");
 _Static_assert(offsetof(legacy_installation, home) == 0xef8, "Version 27 record size");
 _Static_assert(offsetof(legacy_installation, solar_days) == 1848, "Installation solar layout");
+_Static_assert(offsetof(installation_store, activity_generation) == 0x1870 &&
+               sizeof(installation_store) == 9952, "Solar history must fit existing journal padding");
 static const solar_settings default_solar = {.port = 8899, .night_start = 20 * 60, .night_end = 5 * 60};
 static const grid_settings default_grid = {.reserve = 150};
 static const follow_settings default_follow = {
@@ -253,6 +260,12 @@ static struct {
     int64_t day;
     dispatch_daylight today, tomorrow;
 } daylight_cache;
+static struct {
+    int64_t sunset, cutoff;
+    uint32_t bucket;
+    unsigned days, count, dark_seconds;
+    int16_t offsets[DISPATCH_SUNSET_DAYS];
+} sunset_history;
 static struct {
     int32_t watts, previous_watts;
     uint32_t at, epoch, poll_at, revision, import_since, covered_at;
@@ -910,10 +923,18 @@ esp_err_t installation_solar(const solar_settings *settings)
         return ESP_ERR_INVALID_STATE;
     }
     rollback = state;
+    const bool source_changed = strcmp(settings->ip, state.solar.ip) || settings->port != state.solar.port ||
+        strcmp(settings->id, state.solar.id);
     state.solar = *settings;
+    if (source_changed) {
+        const time_t utc = network_clock();
+        state.solar_history_tag = SOLAR_HISTORY_TAG;
+        state.solar_history_from = utc ? (uint32_t)utc : UINT32_MAX;
+    }
     if (rearm) energy_preview();
     const esp_err_t result = save();
     if (result == ESP_OK) {
+        if (source_changed) daylight_cache.day = 0;
         const uint32_t revision = solar.revision + 1;
         memset(&solar, 0, sizeof(solar));
         solar.revision = revision;
@@ -1557,6 +1578,7 @@ esp_err_t installation_accounting(accounting_action action)
         }
         if (clear_activity) {
             timeline_clear(state.activity_generation);
+            daylight_cache.day = 0;
             history_count = history_next = 0;
             memset(&telemetry, 0, sizeof(telemetry));
         } else {
@@ -1607,8 +1629,71 @@ static dispatch_daylight daylight_at(time_t utc)
         daylight_cache.today = dispatch_sun_times(day, state.daylight.latitude_e4, state.daylight.longitude_e4);
         daylight_cache.tomorrow = dispatch_sun_times(day + 1, state.daylight.latitude_e4, state.daylight.longitude_e4);
         daylight_cache.day = day;
+        memset(&sunset_history, 0, sizeof(sunset_history));
     }
     return daylight_cache.today;
+}
+
+static dispatch_daylight daylight_gap_at(time_t utc, bool *learned)
+{
+    dispatch_daylight sun = daylight_at(utc);
+    const bool use_history = sun.kind == DAYLIGHT_RISE_SET && sunset_history.cutoff;
+    if (use_history) sun.sunset = sunset_history.cutoff;
+    if (learned) *learned = use_history;
+    return sun;
+}
+
+static void sunset_history_tick(time_t utc)
+{
+    if (!utc || !state.solar.ip[0] || !timeline_available()) return;
+    if (state.solar_history_from == UINT32_MAX) {
+        state.solar_history_from = utc;
+        dirty = true;
+    }
+    if (daylight_at(utc).kind != DAYLIGHT_RISE_SET) return;
+    if (!sunset_history.bucket && sunset_history.days == DISPATCH_SUNSET_DAYS) return;
+
+    const unsigned period = timeline_period(SUNSET_HISTORY_TIER);
+    if (!sunset_history.bucket) {
+        const dispatch_daylight sun = dispatch_sun_times(daylight_cache.day - ++sunset_history.days,
+            state.daylight.latitude_e4, state.daylight.longitude_e4);
+        sunset_history.sunset = sun.sunset;
+        sunset_history.dark_seconds = 0;
+        if (sun.kind == DAYLIGHT_RISE_SET) {
+            // Start at the end of the window so later production takes
+            // precedence over a temporary dip.
+            sunset_history.bucket = (sun.sunset + DISPATCH_SUNSET_MAX_SHIFT + SUNSET_DARK_SECONDS - 1) / period;
+        }
+    }
+    if (sunset_history.bucket) {
+        const uint32_t bucket = sunset_history.bucket--;
+        const uint32_t start = bucket * period;
+        const int64_t shift = start + period - sunset_history.sunset;
+        if (shift < -DISPATCH_SUNSET_MAX_SHIFT || start < state.solar_history_from) {
+            sunset_history.bucket = 0;
+        } else {
+            timeline_sample row;
+            const bool measured = timeline_sample_read(SUNSET_HISTORY_TIER, bucket, &row) &&
+                row.solar_count && row.solar_max != TIMELINE_UNKNOWN_WATTS;
+            const bool enough = measured && row.solar_count >= period / (2 * TELEMETRY_SECONDS);
+            if (measured && row.solar_max >= SUNSET_LIT_DECAWATTS) {
+                if (enough && shift <= DISPATCH_SUNSET_MAX_SHIFT && sunset_history.dark_seconds >= SUNSET_DARK_SECONDS)
+                    sunset_history.offsets[sunset_history.count++] = shift;
+                sunset_history.bucket = 0;
+            } else {
+                // Missing data breaks the consecutive low readings needed to confirm the transition.
+                sunset_history.dark_seconds = enough ? sunset_history.dark_seconds + period : 0;
+            }
+        }
+    }
+    int16_t shift;
+    if (sunset_history.days == DISPATCH_SUNSET_DAYS && !sunset_history.bucket &&
+        dispatch_sunset_shift(sunset_history.offsets, sunset_history.count, &shift)) {
+        const int64_t cutoff = daylight_cache.today.sunset + shift;
+        if (cutoff > daylight_cache.today.sunrise &&
+            dispatch_solar_day(cutoff - 1, state.daylight.longitude_e4) == daylight_cache.day)
+            sunset_history.cutoff = cutoff;
+    }
 }
 
 static bool solar_night(time_t utc)
@@ -1869,7 +1954,7 @@ static dispatch_inputs inputs(uint32_t now, time_t utc_now)
         in.guard_rate = dispatch_highest_rate(in.guard_rate, other);
     }
     if ((following || grid_source) && state.daylight.enabled) {
-        const dispatch_daylight sun = daylight_at(utc_now);
+        const dispatch_daylight sun = daylight_gap_at(utc_now, NULL);
         const uint32_t duration = state.daylight.minutes * 60U;
         const bool same_day = state.bridge_started &&
             dispatch_solar_day(state.bridge_started, state.daylight.longitude_e4) == daylight_cache.day;
@@ -2478,7 +2563,7 @@ const char *installation_next_label(operation_change kind)
         [NEXT_WEEKEND_PLAN] = "Weekend plan takes effect",
         [NEXT_WEEKDAY_PLAN] = "Weekday plan takes effect",
         [NEXT_SUNRISE] = "Sunrise opens daylight gap coverage",
-        [NEXT_SUNSET] = "Sunset ends daylight gap coverage",
+        [NEXT_SUNSET] = "Evening cutoff ends daylight gap coverage",
         [NEXT_DAYLIGHT_BRIDGE_END] = "Daylight gap time limit ends",
     };
     return labels[kind];
@@ -2517,7 +2602,7 @@ static operation_next next_operation(const dispatch_inputs *in, const dispatch_d
             consider_next(&next, NEXT_QUIET_END, DISPATCH_LIMIT, until_minute(in->quiet.end_minute, minute, utc));
         }
         if (in->solar.bridge.enabled) {
-            const dispatch_daylight sun = daylight_at(utc);
+            const dispatch_daylight sun = daylight_gap_at(utc, NULL);
             if (sun.kind == DAYLIGHT_RISE_SET && sun.sunrise > utc)
                 consider_next(&next, NEXT_SUNRISE, DISPATCH_LIMIT, sun.sunrise - utc);
             else if (sun.kind == DAYLIGHT_RISE_SET && sun.sunset > utc)
@@ -2652,7 +2737,7 @@ void installation_read(installation_view *view)
     if (view->energy.paid_permission == DISPATCH_DAYLIGHT_BRIDGE)
         view->energy.gap_budget = dispatch_daylight_forecast(&in, 0);
     view->energy.daylight = state.daylight;
-    const dispatch_daylight sun = daylight_at(utc);
+    const dispatch_daylight sun = daylight_gap_at(utc, &view->energy.sunset_learned);
     view->energy.daylight_kind = sun.kind;
     if (sun.kind == DAYLIGHT_RISE_SET) {
         uint32_t sunrise, sunset;
@@ -4624,7 +4709,7 @@ static void worker(void *arg)
         const uint32_t telemetry_at = network_uptime();
         if (telemetry_at >= next_telemetry) {
             telemetry_tick(telemetry_at);
-            next_telemetry = telemetry_at + 10;
+            next_telemetry = telemetry_at + TELEMETRY_SECONDS;
         }
         timeline_flush_events();
         unlock();
@@ -4651,6 +4736,7 @@ static void worker(void *arg)
             }
         }
         lock();
+        if (!commanded) sunset_history_tick(utc);
         if (!commanded && network_update_staged() && !testing_outlet(power_test.slot)) {
             const bool saved = (!dirty && !storage_error) || save() == ESP_OK;
             unlock();
@@ -4778,6 +4864,7 @@ void installation_start(void)
     if (state.activity_generation_tag != ACTIVITY_GENERATION_TAG) {
         state.activity_generation = state.activity_generation_tag = 0;
     }
+    if (state.solar_history_tag != SOLAR_HISTORY_TAG) state.solar_history_from = 0;
     timeline_start(state.activity_generation);
     if (!equipment_writes_allowed() && (state.enabled || state.test_armed || state.hold_mask ||
         state.hold_on || state.attempt_counts || state.evaluation.active)) {

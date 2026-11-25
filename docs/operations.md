@@ -43,13 +43,15 @@ for a set duration or until you resume. The indefinite pause survives a restart.
 | **Allowed mining hours** | When miners may run on any power source. Choose anytime or enter local hours, including an overnight window. |
 | **Quiet Hours** | Stops mining and blocks starts during the chosen hours. |
 | **Allow paid mining** | Lets DISPATCH buy power to start eligible miners and sustain running miners during the paid window. |
-| **Keep running miners on through daylight gaps** | Uses paid power to sustain running miners between local sunrise and sunset. Starts still need enough solar or a paid mining window. Set your location and maximum gap duration. |
+| **Keep running miners on through daylight gaps** | Uses paid power to sustain running miners between local sunrise and the evening cutoff. Starts still need enough solar or a paid mining window. Set your location and maximum gap duration. |
 | **Daily paid electricity limit** | One shared allowance for both paid permissions. Select **No daily limit** for unlimited spending during permitted periods. |
 | **Weekend plan** | Supplies separate mining hours, paid hours, Quiet Hours, and rate windows on Saturday and Sunday. The new day takes effect at local midnight. |
 
 On Overview, **Operating schedule → Daily hours** shows the active day’s mining,
 paid-start, quiet, and rate windows. With daylight gap coverage enabled, the
-amber ring spans estimated sunrise to sunset. The local estimates are visible
+amber ring spans estimated sunrise to the evening cutoff. DISPATCH labels the
+cutoff **Panel-based cutoff** when recent solar production history adjusts it.
+With insufficient production history, it shows **Est. sunset**. The local times are visible
 even with **Daily hours** collapsed. Continuous daylight fills the ring, and
 continuous darkness leaves it unlit. The schedule shows a status message while
 estimates are unavailable. Gap coverage follows mining hours and Quiet Hours.
@@ -93,7 +95,7 @@ changes. Use **Evaluate presets** to collect a qualifying comparison.
 - **Adapt to available power** can lower draw when solar falls short and
   restore the higher preset when sustained headroom returns. During an active
   daylight gap, **Energy** compares the remaining allowance at current draw
-  with time until sunset and can show the estimate with a proposed lower
+  with time until the evening cutoff and can show the estimate with a proposed lower
   preset. The gap duration still caps a continuous dip.
 - **Use my measured efficiency preset** uses the qualifying preset that
   consumed less energy per unit of work.

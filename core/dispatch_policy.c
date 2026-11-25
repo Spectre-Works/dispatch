@@ -354,7 +354,7 @@ const char *dispatch_explanation(dispatch_reason reason)
         [DISPATCH_SOLAR_OR_PAID_REQUIRED] = "Solar coverage is unavailable and paid electricity is blocked",
         [DISPATCH_SOLAR_DEFICIT_PENDING] = "Solar falls short. Waiting for an eligible lower-priority outlet to shed",
         [DISPATCH_DAYLIGHT_WAIT] = "Daylight coverage is on standby. Starts require sufficient solar",
-        [DISPATCH_DAYLIGHT_DARK] = "Daylight gap coverage is outside sunrise to sunset",
+        [DISPATCH_DAYLIGHT_DARK] = "Outside daylight gap coverage hours",
         [DISPATCH_DAYLIGHT_BRIDGE] = "Paid electricity is keeping the running miner on through a daylight gap",
         [DISPATCH_DAYLIGHT_EXPIRED] = "Daylight gap coverage reached its time limit",
         [DISPATCH_DAYLIGHT_BUDGET] = "Too little paid allowance remains to bridge this gap",

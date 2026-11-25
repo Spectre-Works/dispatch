@@ -13,7 +13,7 @@ the same fields describe every plan.
   and restart lockout, and enough time before the next scheduled stop.
 - A paid mining window admits eligible starts and can sustain running miners.
   Daylight gap coverage can sustain running miners until solar recovers, the
-  gap ends, the sun sets, or the allowance runs out. Both can be enabled.
+  gap ends, the evening cutoff arrives, or the allowance runs out. Both can be enabled.
   The paid window takes priority when they overlap. The meter accrues one cost.
 - The daily allowance reserves power for sequential outlet changes and
   fresh meter readings. Paid starts also reserve a minimum run interval.
@@ -42,6 +42,18 @@ subject to the allowance. After that, a separate paid mining window can
 continue operation. When a selected meter becomes unavailable, DISPATCH
 continues to label it as the selected source.
 
+Daylight gap coverage opens at the location-based sunrise. The controller
+checks the last seven evenings of 15-minute Activity records from its solar
+production source. A qualifying evening shows production of at least 20 W
+followed by two well-sampled 15-minute periods below 20 W, with no later
+production at or above 20 W in the evening check. Missing readings cannot
+confirm low output. When at least three evenings and a majority of the
+qualifying evenings agree within 30 minutes,
+DISPATCH applies their median offset to today's calculated sunset, up to
+90 minutes earlier or later. It uses the location-based estimate while the
+history is insufficient, after clearing Activity, or after replacing the
+solar production source until new history qualifies.
+
 ## Presets
 
 An authorized compatible miner can leave its preset as set, adapt, or use
@@ -55,8 +67,8 @@ reduce a sustained shortfall by at least 25 W and 5% of the current draw.
 Daylight gaps require a measured efficiency benefit and at least two minutes
 remaining. During a gap, DISPATCH estimates how long the remaining allowance
 would last at the fleet’s current paid draw and tariff. An eligible preset
-can extend that allowance when it would run out before sunset or remove
-paid draw altogether. When a sunset estimate is unavailable, an eligible
+can extend that allowance when it would run out before the evening cutoff or
+remove paid draw altogether. When an evening cutoff is unavailable, an eligible
 preset can still reduce paid draw. The maximum gap duration and budget
 reserve govern operation. Restores require sustained solar headroom and
 the preset dwell interval. Relay starts wait while a preset write is in flight.
