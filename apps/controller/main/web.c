@@ -88,7 +88,7 @@ static esp_err_t index_page(httpd_req_t *request)
     httpd_resp_set_type(request, "text/html; charset=utf-8");
     httpd_resp_set_hdr(request, "Content-Security-Policy",
         "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
-        "connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+        "img-src data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
     httpd_resp_set_hdr(request, "Vary", "Accept-Encoding");
     if (accepts_gzip(request)) {
         httpd_resp_set_hdr(request, "Content-Encoding", "gzip");

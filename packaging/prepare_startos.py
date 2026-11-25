@@ -174,9 +174,12 @@ def prepare(revision, tag, output, signing_key, expected_signer):
         run(package / "node_modules/.bin/tsc", "--noEmit", cwd=package)
         run(package / "node_modules/.bin/ncc", "build", "startos/index.ts", "-o", "javascript", cwd=package)
         env = dict(os.environ, DISPATCH_PACKAGE_RELEASE_VERSION=tag)
+        icon = source / "assets" / "brand" / "dispatch-icon.svg"
+        if not icon.is_file():
+            icon = package / "icon.svg"  # Older revisions keep their original package icon.
         for arch in ARCHES:
             path = artifacts / f"{PACKAGE_ID}-{tag}-{arch}.s9pk"
-            run(cli, "s9pk", "pack", ".", "--arch", arch, "--output", path, cwd=package, env=env)
+            run(cli, "s9pk", "pack", ".", "--arch", arch, "--icon", icon, "--output", path, cwd=package, env=env)
             verify_package(cli, package, path, arch, version, public[len(ED25519_PUBLIC_PREFIX):], work)
         (artifacts / "STARTOS-SOURCE.json").write_text(json.dumps(
             {"release": tag, "source_commit": commit, "signer_sha256": fingerprint}, indent=2) + "\n")

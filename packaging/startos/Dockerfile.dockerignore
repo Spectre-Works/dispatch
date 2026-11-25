@@ -3,6 +3,8 @@
 !apps/startos/**
 !apps/controller/main/**
 !apps/web/index.html
+!apps/web/build_dashboard.py
+!assets/brand/dispatch-icon.svg
 !core/**
 !integrations/**
 !.startos-inputs/http-parser/**

@@ -4,7 +4,8 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SPECTRE WORKS DISPATCH/01</title>
+<title>SPECTRE WORKS DISPATCH</title>
+<link rel="icon" type="image/svg+xml" href="../../assets/brand/dispatch-icon.svg">
 <style>
 [data-edition="startos"] [data-atom-only],
 html:not([data-edition="startos"]) [data-startos-only]{display:none!important}
@@ -24,13 +25,9 @@ main{width:min(calc(100% - clamp(1.5rem,6vw,6rem)),82rem);margin:auto;padding:0 
 .masthead{display:flex;align-items:center;justify-content:space-between;gap:.85rem;
   padding:1.1rem 0;border-bottom:1px solid var(--line)}
 .wordmark,.masthead-actions{display:flex;align-items:center;gap:.85rem}
-.dispatch-mark{width:2.6rem;aspect-ratio:1;flex:none;display:grid;place-items:center;background:var(--primary);
-  clip-path:polygon(0 0,75% 0,100% 25%,100% 100%,25% 100%,0 75%)}
-.dispatch-mark::before{content:"";width:1.55rem;height:1.1rem;background:var(--deep);
-  clip-path:polygon(0 46%,32% 46%,55% 0,69% 0,52% 46%,100% 46%,100% 66%,65% 66%,46% 100%,32% 100%,51% 66%,0 66%)}
+.dispatch-mark{width:2.6rem;height:auto;flex:none;display:block}
 .brand,.eyebrow{font:600 .75rem/1.4 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .wordmark h1{font-size:clamp(1.2rem,4vw,1.65rem);line-height:1;margin:.16rem 0 0;letter-spacing:-.045em}
-.wordmark h1 span{color:var(--blue);font:500 .88em var(--mono);letter-spacing:-.09em}
 h2{font-size:1.5rem;margin:.25rem 0 .65rem;line-height:1.18;letter-spacing:-.025em}
 h3{font-size:1.12rem;margin:.35rem 0;line-height:1.25;letter-spacing:-.016em}
 section,article,details{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
@@ -638,8 +635,8 @@ main:has(#dashboard[hidden]) .workspace-nav{display:none}
 <main>
 <header class="masthead">
   <div class="wordmark">
-    <div class="dispatch-mark" aria-hidden="true"></div>
-    <div><div class="brand">SPECTRE WORKS</div><h1>DISPATCH<span>/01</span></h1></div>
+    <img class="dispatch-mark" src="../../assets/brand/dispatch-icon.svg" width="128" height="128" alt="">
+    <div><div class="brand">SPECTRE WORKS</div><h1>DISPATCH</h1></div>
   </div>
   <nav class="workspace-nav" aria-label="Workspace">
     <button type="button" data-view="overview" aria-current="page"><i class="nav-icon icon-overview" aria-hidden="true"></i>Overview</button>

@@ -13,6 +13,9 @@ import re
 import sys
 import tomllib
 from urllib.parse import unquote
+from xml.etree.ElementTree import ParseError
+
+from generate_dispatch_icon import ICON, render_icon
 
 ROOT = Path(__file__).resolve().parents[1]
 APPLICATION = "LicenseRef-Spectre-Dispatch-1.0"
@@ -40,6 +43,12 @@ def check(publication: bool = False) -> tuple[list[str], list[str]]:
     for rel in REQUIRED:
         if not (ROOT / rel).is_file():
             errors.append(f"Missing required file: {rel}")
+
+    try:
+        if ICON.read_bytes() != render_icon():
+            errors.append("Run tools/generate_dispatch_icon.py to update the shared icon from the Bridge mark.")
+    except (OSError, ParseError) as exc:
+        errors.append(f"Cannot validate the DISPATCH brand icon: {exc}")
 
     expected_scopes = None
     try:

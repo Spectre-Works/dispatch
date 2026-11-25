@@ -23,13 +23,12 @@ find_package(ZLIB REQUIRED)
 set(root "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 set(controller "${root}/apps/controller/main")
 set(dashboard "${CMAKE_CURRENT_BINARY_DIR}/index.html")
-set(dashboard_source "${root}/apps/web/index.html")
+set(web "${root}/apps/web")
+set(icon "${root}/assets/brand/dispatch-icon.svg")
 configure_file(dashboard.S.in dashboard.S @ONLY)
 add_custom_command(OUTPUT "${dashboard}" "${dashboard}.gz"
-    COMMAND "${Python3_EXECUTABLE}" -c
-        "import gzip, pathlib, sys; source, dest = map(pathlib.Path, sys.argv[1:]); data = source.read_bytes().replace(b'<html lang=\"en\">', b'<html lang=\"en\" data-edition=\"startos\">', 1); dest.write_bytes(data); dest.with_suffix('.html.gz').write_bytes(gzip.compress(data, mtime=0))"
-        "${dashboard_source}" "${dashboard}"
-    DEPENDS "${dashboard_source}"
+    COMMAND "${Python3_EXECUTABLE}" "${web}/build_dashboard.py" --startos "${dashboard}" "${dashboard}.gz"
+    DEPENDS "${web}/build_dashboard.py" "${web}/index.html" "${icon}"
     VERBATIM)
 set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/dashboard.S"
     PROPERTIES OBJECT_DEPENDS "${dashboard};${dashboard}.gz")

@@ -8,19 +8,19 @@ idf_component_register(
          ../../../integrations/energy/modbus_tcp.c ../../../integrations/energy/victron_gx.c
          ../../../integrations/energy/fronius.c ../../../integrations/energy/native_grid.c ../../../integrations/energy/ecu_r.c ../../../core/dispatch_daylight.c
     INCLUDE_DIRS ../../../integrations/mining-services ../../../integrations/energy ../../../core ../../../integrations ../../../integrations/switches ../../../integrations/miners
-    EMBED_TXTFILES ../../web/index.html
     REQUIRES app_update efuse esp_driver_gpio esp_driver_usb_serial_jtag esp_event esp_http_server esp_netif esp_partition esp_security esp_timer esp-tls esp_wifi http_parser lwip mbedtls nvs_flash
 )
 
 idf_build_get_property(dispatch_python PYTHON)
-set(dispatch_html "${CMAKE_CURRENT_SOURCE_DIR}/../../web/index.html")
+set(dispatch_web "${CMAKE_CURRENT_SOURCE_DIR}/../../web")
+set(dispatch_icon "${CMAKE_CURRENT_SOURCE_DIR}/../../../assets/brand/dispatch-icon.svg")
+set(dispatch_html "${CMAKE_CURRENT_BINARY_DIR}/index.html")
 set(dispatch_gzip "${CMAKE_CURRENT_BINARY_DIR}/dispatch_index_html.gz")
-add_custom_command(OUTPUT "${dispatch_gzip}"
-    COMMAND "${dispatch_python}" -c
-        "import gzip, pathlib, sys; source, dest = map(pathlib.Path, sys.argv[1:]); dest.write_bytes(gzip.compress(source.read_bytes(), mtime=0))"
-        "${dispatch_html}" "${dispatch_gzip}"
-    DEPENDS "${dispatch_html}"
+add_custom_command(OUTPUT "${dispatch_html}" "${dispatch_gzip}"
+    COMMAND "${dispatch_python}" "${dispatch_web}/build_dashboard.py" "${dispatch_html}" "${dispatch_gzip}"
+    DEPENDS "${dispatch_web}/build_dashboard.py" "${dispatch_web}/index.html" "${dispatch_icon}"
     VERBATIM)
+target_add_binary_data(${COMPONENT_LIB} "${dispatch_html}" TEXT)
 target_add_binary_data(${COMPONENT_LIB} "${dispatch_gzip}" BINARY)
 
 if(DISPATCH_LINK_TEST)

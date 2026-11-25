@@ -1,8 +1,10 @@
 <!-- SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC -->
 
+<img src="assets/brand/dispatch-icon.svg" width="64" height="64" alt="">
+
 # SPECTRE WORKS DISPATCH
 
-DISPATCH/01 is a source-available developer preview.
+DISPATCH is a source-available developer preview.
 
 DISPATCH manages miners on your local network. Set the hours and electricity
 budget, pair each miner with a metered outlet, and review what the controller
