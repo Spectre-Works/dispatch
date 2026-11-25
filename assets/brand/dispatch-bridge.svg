@@ -1,0 +1,10 @@
+<!-- SPDX-FileCopyrightText: 2026 SPECTRE WORKS LLC -->
+<svg xmlns="http://www.w3.org/2000/svg" width="808" height="870"
+     viewBox="0 0 808 870" role="img" aria-labelledby="title">
+  <title id="title">DISPATCH Bridge</title>
+  <g fill="#000">
+    <path id="upper-terminal" d="M200 0 H716 L804 89 L695 207 H413 L176 449 H0 V200 Z"/>
+    <path id="bridge" d="M437 290 H600 V351 L366 586 H203 V525 Z"/>
+    <path id="lower-terminal" d="M626 428 H808 V676 L615 870 H93 L5 783 L108 670 H390 Z"/>
+  </g>
+</svg>
