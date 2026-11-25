@@ -57,4 +57,4 @@ and the dashboard owner key. Keep the compatible package and signer identity
 available for recovery. When replacing an installation, keep a separate
 configuration export for moving only the plan and equipment slots.
 
-[StartOS backups](https://docs.start9.com/start-os/0.4.2.x/backups.html) · [Build and release DISPATCH packages](../packaging/README.md#startos-packages)
+[Create a StartOS backup](https://docs.start9.com/start-os/0.4.2.x/backup-create.html) · [Restore a StartOS backup](https://docs.start9.com/start-os/0.4.2.x/backup-restore.html) · [Build and release DISPATCH packages](../packaging/README.md#startos-packages)
